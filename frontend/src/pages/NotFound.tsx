@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 
 export default function NotFound() {
   return (
-    <div className="flex h-screen flex-col items-center justify-center gap-6 bg-[#020818]">
+    <div className="flex h-screen flex-col items-center justify-center gap-6 bg-background">
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -15,12 +15,16 @@ export default function NotFound() {
           <Globe2 size={36} className="text-gold-400" />
         </div>
         <div>
-          <p className="font-mono text-gold-500/60 text-xs uppercase tracking-widest mb-2">Error 404</p>
+          <p className="font-mono text-gold-500/60 text-xs uppercase tracking-widest mb-2">
+            Error 404
+          </p>
           <h1 className="font-display text-4xl font-bold text-foreground">Page Not Found</h1>
-          <p className="mt-2 text-sm text-muted-foreground">This diplomatic route does not exist.</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This diplomatic route does not exist.
+          </p>
         </div>
         <Button asChild>
-          <Link to="/">Return to Command Center</Link>
+          <Link to="/">Go to Homepage</Link>
         </Button>
       </motion.div>
     </div>

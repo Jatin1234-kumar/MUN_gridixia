@@ -1,6 +1,8 @@
 import { BrowserRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '@/features/auth/AuthContext';
+import { ToastProvider } from '@/components/shared/Toast';
+import { ErrorBoundary } from '@/components/shared/ErrorBoundary';
 import AppRoutes from '@/routes/AppRoutes';
 
 const queryClient = new QueryClient({
@@ -18,7 +20,11 @@ export default function App() {
     <BrowserRouter>
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <AppRoutes />
+          <ToastProvider>
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
+          </ToastProvider>
         </AuthProvider>
       </QueryClientProvider>
     </BrowserRouter>

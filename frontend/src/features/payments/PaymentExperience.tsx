@@ -21,16 +21,29 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { Select } from '@/components/ui/select';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
+import { readJson, writeJson } from '@/lib/storage';
 import { useCommittees } from '@/hooks/useCommittees';
 import { useEvents } from '@/hooks/useEvents';
-import type { Committee, DelegateApplicationDraft, Event, PaymentSession, PaymentStatus } from '@/types';
+import type {
+  Committee,
+  DelegateApplicationDraft,
+  Event,
+  PaymentSession,
+  PaymentStatus,
+} from '@/types';
 
 const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
 const paymentDraftKey = 'mun-gridixia:payment-draft:v1';
@@ -50,7 +63,16 @@ type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 type PaymentFlowStatus = PaymentStatus;
 
-const statusMeta: Record<PaymentFlowStatus, { label: string; badge: 'pending' | 'active' | 'urgent' | 'inactive'; icon: ComponentType<{ className?: string }>; description: string; progress: number }> = {
+const statusMeta: Record<
+  PaymentFlowStatus,
+  {
+    label: string;
+    badge: 'pending' | 'active' | 'urgent' | 'inactive';
+    icon: ComponentType<{ className?: string }>;
+    description: string;
+    progress: number;
+  }
+> = {
   pending: {
     label: 'Pending',
     badge: 'pending',
@@ -91,22 +113,6 @@ const defaultValues: PaymentFormValues = {
   consent: false,
 };
 
-function readJson<T>(key: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeJson(key: string, value: unknown) {
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
-
 function clearPaymentStorage() {
   window.localStorage.removeItem(paymentDraftKey);
   window.localStorage.removeItem(paymentSessionKey);
@@ -121,18 +127,22 @@ function getSeedValues(): Partial<PaymentFormValues> {
     ...paymentDraft,
     applicantName: paymentDraft?.applicantName ?? delegateDraft?.personal.fullName ?? '',
     email: paymentDraft?.email ?? delegateDraft?.personal.email ?? '',
-    committeeId: paymentDraft?.committeeId ?? delegateDraft?.committeePreference.preferredCommitteeId ?? '',
+    committeeId:
+      paymentDraft?.committeeId ?? delegateDraft?.committeePreference.preferredCommitteeId ?? '',
     billingName: paymentDraft?.billingName ?? delegateDraft?.personal.fullName ?? '',
   };
 }
 
 function computeFees(committee?: Committee, event?: Event, couponCode = '') {
   const baseFee = event?.type === 'YOUTH_PARLIAMENT' ? 2800 : 3500;
-  const committeeFee = committee ? (committee.type === 'MUN' ? 1700 : 1300) + Math.round(committee.capacity * 10) : 1500;
+  const committeeFee = committee
+    ? (committee.type === 'MUN' ? 1700 : 1300) + Math.round(committee.capacity * 10)
+    : 1500;
   const kitFee = 250;
   const serviceFee = 300;
   const subtotal = baseFee + committeeFee + kitFee + serviceFee;
-  const discount = couponCode.trim().toUpperCase() === 'GRIDIXIA10' ? Math.round(subtotal * 0.1) : 0;
+  const discount =
+    couponCode.trim().toUpperCase() === 'GRIDIXIA10' ? Math.round(subtotal * 0.1) : 0;
   const taxable = Math.max(0, subtotal - discount);
   const tax = Math.round(taxable * 0.18);
   const total = taxable + tax;
@@ -156,7 +166,13 @@ function generateReceiptId() {
   return `rcpt_${crypto.randomUUID().slice(0, 10)}`;
 }
 
-function PaymentStatusCard({ status, session }: { status: PaymentFlowStatus; session?: PaymentSession }) {
+function PaymentStatusCard({
+  status,
+  session,
+}: {
+  status: PaymentFlowStatus;
+  session?: PaymentSession;
+}) {
   const meta = statusMeta[status];
   const Icon = meta.icon;
 
@@ -171,7 +187,16 @@ function PaymentStatusCard({ status, session }: { status: PaymentFlowStatus; ses
           <Badge variant={meta.badge}>{meta.label}</Badge>
         </div>
         <div className="flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
-          <div className={cn('flex h-11 w-11 items-center justify-center rounded-2xl border', status === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : status === 'failed' ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-gold-500/30 bg-gold-500/10 text-gold-300')}>
+          <div
+            className={cn(
+              'flex h-11 w-11 items-center justify-center rounded-2xl border',
+              status === 'success'
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                : status === 'failed'
+                  ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                  : 'border-gold-500/30 bg-gold-500/10 text-gold-300',
+            )}
+          >
             <Icon className="h-5 w-5" />
           </div>
           <div>
@@ -182,8 +207,16 @@ function PaymentStatusCard({ status, session }: { status: PaymentFlowStatus; ses
         <Progress value={meta.progress} />
       </CardHeader>
       <CardContent className="space-y-3 text-sm text-muted-foreground">
-        <StatusStep title="Pending" active={status === 'pending'} done={status === 'processing' || status === 'success' || status === 'failed'} />
-        <StatusStep title="Processing" active={status === 'processing'} done={status === 'success' || status === 'failed'} />
+        <StatusStep
+          title="Pending"
+          active={status === 'pending'}
+          done={status === 'processing' || status === 'success' || status === 'failed'}
+        />
+        <StatusStep
+          title="Processing"
+          active={status === 'processing'}
+          done={status === 'success' || status === 'failed'}
+        />
         <StatusStep title="Success" active={status === 'success'} done={status === 'success'} />
         <StatusStep title="Failed" active={status === 'failed'} done={status === 'failed'} />
         {session?.orderId && (
@@ -199,13 +232,37 @@ function PaymentStatusCard({ status, session }: { status: PaymentFlowStatus; ses
 
 function StatusStep({ title, active, done }: { title: string; active: boolean; done: boolean }) {
   return (
-    <div className={cn('flex items-center gap-3 rounded-xl border px-3 py-2', active ? 'border-gold-500/30 bg-gold-500/10 text-foreground' : 'border-white/[0.06] bg-white/[0.02]')}>
-      <div className={cn('flex h-7 w-7 items-center justify-center rounded-full border', done ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : active ? 'border-gold-500/30 bg-gold-500/10 text-gold-300' : 'border-white/[0.08] bg-navy-900/70')}>
-        {done ? <CheckCircle2 className="h-4 w-4" /> : active ? <Flame className="h-4 w-4" /> : <span className="h-2 w-2 rounded-full bg-current" />}
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-xl border px-3 py-2',
+        active
+          ? 'border-gold-500/30 bg-gold-500/10 text-foreground'
+          : 'border-white/[0.06] bg-white/[0.02]',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-7 w-7 items-center justify-center rounded-full border',
+          done
+            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+            : active
+              ? 'border-gold-500/30 bg-gold-500/10 text-gold-300'
+              : 'border-white/[0.08] bg-navy-900/70',
+        )}
+      >
+        {done ? (
+          <CheckCircle2 className="h-4 w-4" />
+        ) : active ? (
+          <Flame className="h-4 w-4" />
+        ) : (
+          <span className="h-2 w-2 rounded-full bg-current" />
+        )}
       </div>
       <div>
         <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-xs text-muted-foreground">{active ? 'Current step' : done ? 'Completed' : 'Waiting'}</p>
+        <p className="text-xs text-muted-foreground">
+          {active ? 'Current step' : done ? 'Completed' : 'Waiting'}
+        </p>
       </div>
     </div>
   );
@@ -220,7 +277,17 @@ function ValueRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function SectionCard({ title, description, icon: Icon, children }: { title: string; description: string; icon: ComponentType<{ className?: string }>; children: ReactNode }) {
+function SectionCard({
+  title,
+  description,
+  icon: Icon,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: ComponentType<{ className?: string }>;
+  children: ReactNode;
+}) {
   return (
     <Card className="glass-card border-white/[0.08]">
       <CardHeader className="space-y-3 border-b border-white/[0.06] bg-white/[0.015]">
@@ -240,8 +307,12 @@ function SectionCard({ title, description, icon: Icon, children }: { title: stri
 }
 
 function useRestoreableSession() {
-  const [session, setSession] = useState<PaymentSession | undefined>(() => readJson<PaymentSession>(paymentSessionKey));
-  const [savedDraft, setSavedDraft] = useState<Partial<PaymentFormValues>>(() => readJson<Partial<PaymentFormValues>>(paymentDraftKey) ?? {});
+  const [session, setSession] = useState<PaymentSession | undefined>(() =>
+    readJson<PaymentSession>(paymentSessionKey),
+  );
+  const [savedDraft, setSavedDraft] = useState<Partial<PaymentFormValues>>(
+    () => readJson<Partial<PaymentFormValues>>(paymentDraftKey) ?? {},
+  );
 
   useEffect(() => {
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -298,19 +369,28 @@ export function PaymentExperience() {
     }
   }, [session]);
 
-  const selectedCommittee = committees.find((committee: Committee) => committee.id === committeeId) ?? committees.find((committee: Committee) => committee.id === savedDraft.committeeId);
+  const selectedCommittee =
+    committees.find((committee: Committee) => committee.id === committeeId) ??
+    committees.find((committee: Committee) => committee.id === savedDraft.committeeId);
   const selectedEvent = events.find((event: Event) => event.id === selectedCommittee?.eventId);
   const fees = computeFees(selectedCommittee, selectedEvent, couponCode);
   const paymentStatus = session?.status ?? 'pending';
-  const hasActiveLock = Boolean(session && (session.status === 'pending' || session.status === 'processing'));
+  const hasActiveLock = Boolean(
+    session && (session.status === 'pending' || session.status === 'processing'),
+  );
   const hasFailedSession = session?.status === 'failed';
 
   const paymentMutation = useMutation({
     mutationFn: async (values: PaymentFormValues) => {
       const currentSession = readJson<PaymentSession>(paymentSessionKey);
 
-      if (currentSession && (currentSession.status === 'pending' || currentSession.status === 'processing')) {
-        throw new Error('An active order already exists. Resume the saved session instead of creating a duplicate order.');
+      if (
+        currentSession &&
+        (currentSession.status === 'pending' || currentSession.status === 'processing')
+      ) {
+        throw new Error(
+          'An active order already exists. Resume the saved session instead of creating a duplicate order.',
+        );
       }
 
       const committee = committees.find((item) => item.id === values.committeeId);
@@ -400,7 +480,9 @@ export function PaymentExperience() {
 
   const onSubmit = form.handleSubmit(async (values) => {
     if (hasActiveLock) {
-      setInfoMessage('A payment order is already active. Resume the saved session to avoid duplicate orders.');
+      setInfoMessage(
+        'A payment order is already active. Resume the saved session to avoid duplicate orders.',
+      );
       return;
     }
 
@@ -419,14 +501,22 @@ export function PaymentExperience() {
       couponCode: savedDraft.couponCode ?? '',
       consent: true,
     });
-    setInfoMessage('Saved payment session restored. You can continue without creating a new order.');
+    setInfoMessage(
+      'Saved payment session restored. You can continue without creating a new order.',
+    );
     setLastRecoveryAction('Restored saved order');
   };
 
   const retryFailedPayment = async () => {
     if (!session || session.status !== 'failed') return;
 
-    setSession({ ...session, status: 'processing', attempts: session.attempts + 1, failureReason: undefined, updatedAt: new Date().toISOString() });
+    setSession({
+      ...session,
+      status: 'processing',
+      attempts: session.attempts + 1,
+      failureReason: undefined,
+      updatedAt: new Date().toISOString(),
+    });
     await paymentMutation.mutateAsync({
       applicantName: session.applicantName,
       email: session.email,
@@ -465,22 +555,55 @@ export function PaymentExperience() {
 
       <div className="grid gap-6 xl:grid-cols-[1.25fr_0.9fr]">
         <div className="space-y-6">
-          <SectionCard title="Registration Summary" description="The details below are synchronized from your application draft and current selections." icon={Sparkles}>
+          <SectionCard
+            title="Registration Summary"
+            description="The details below are synchronized from your application draft and current selections."
+            icon={Sparkles}
+          >
             <div className="grid gap-3 sm:grid-cols-2">
               <ValueRow label="Applicant" value={form.watch('applicantName') || 'Not set'} />
               <ValueRow label="Email" value={form.watch('email') || 'Not set'} />
-              <ValueRow label="Committee" value={selectedCommittee ? `${selectedCommittee.abbr} - ${selectedCommittee.name}` : 'Not selected'} />
-              <ValueRow label="Event" value={selectedEvent ? `${selectedEvent.name} • ${formatDate(selectedEvent.date)}` : 'Auto-linked to committee'} />
-              <ValueRow label="Country Preference" value={(readJson<DelegateApplicationDraft>(delegateDraftKey)?.countryPreference.firstChoiceCountry) || 'Imported from application draft'} />
+              <ValueRow
+                label="Committee"
+                value={
+                  selectedCommittee
+                    ? `${selectedCommittee.abbr} - ${selectedCommittee.name}`
+                    : 'Not selected'
+                }
+              />
+              <ValueRow
+                label="Event"
+                value={
+                  selectedEvent
+                    ? `${selectedEvent.name} • ${formatDate(selectedEvent.date)}`
+                    : 'Auto-linked to committee'
+                }
+              />
+              <ValueRow
+                label="Country Preference"
+                value={
+                  readJson<DelegateApplicationDraft>(delegateDraftKey)?.countryPreference
+                    .firstChoiceCountry || 'Imported from application draft'
+                }
+              />
               <ValueRow label="Session Status" value={statusMeta[paymentStatus].label} />
             </div>
             <div className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 text-sm text-muted-foreground">
-              <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">Duplicate Guard</p>
-              <p className="mt-2">Active sessions are locked in local storage. Refreshing the page restores the order instead of creating a duplicate.</p>
+              <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
+                Duplicate Guard
+              </p>
+              <p className="mt-2">
+                Active sessions are locked in local storage. Refreshing the page restores the order
+                instead of creating a duplicate.
+              </p>
             </div>
           </SectionCard>
 
-          <SectionCard title="Committee Selection" description="Choose the committee tied to this payment and review its linked event." icon={Wallet}>
+          <SectionCard
+            title="Committee Selection"
+            description="Choose the committee tied to this payment and review its linked event."
+            icon={Wallet}
+          >
             <div className="space-y-1.5">
               <Label htmlFor="committeeId">Committee</Label>
               <select
@@ -499,13 +622,26 @@ export function PaymentExperience() {
 
             <div className="grid gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:grid-cols-2">
               <ValueRow label="Committee Type" value={selectedCommittee?.type ?? 'Not selected'} />
-              <ValueRow label="Capacity" value={selectedCommittee ? formatNumber(selectedCommittee.capacity) : '—'} />
-              <ValueRow label="Linked Event" value={selectedEvent ? selectedEvent.name : 'Not selected'} />
-              <ValueRow label="Event Date" value={selectedEvent ? formatDate(selectedEvent.date) : '—'} />
+              <ValueRow
+                label="Capacity"
+                value={selectedCommittee ? formatNumber(selectedCommittee.capacity) : '—'}
+              />
+              <ValueRow
+                label="Linked Event"
+                value={selectedEvent ? selectedEvent.name : 'Not selected'}
+              />
+              <ValueRow
+                label="Event Date"
+                value={selectedEvent ? formatDate(selectedEvent.date) : '—'}
+              />
             </div>
           </SectionCard>
 
-          <SectionCard title="Fee Breakdown" description="Transparent fee calculation that updates when committee or coupon changes." icon={CreditCard}>
+          <SectionCard
+            title="Fee Breakdown"
+            description="Transparent fee calculation that updates when committee or coupon changes."
+            icon={CreditCard}
+          >
             <div className="space-y-2">
               <ValueRow label="Base Registration" value={formatNumber(fees.baseFee)} />
               <ValueRow label="Committee Allocation" value={formatNumber(fees.committeeFee)} />
@@ -524,15 +660,28 @@ export function PaymentExperience() {
             </div>
           </SectionCard>
 
-          <SectionCard title="Payment Form" description="Complete the payment information and lock the order before moving to the gateway." icon={ShieldCheck}>
+          <SectionCard
+            title="Payment Form"
+            description="Complete the payment information and lock the order before moving to the gateway."
+            icon={ShieldCheck}
+          >
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label htmlFor="applicantName">Applicant Name</Label>
-                <Input id="applicantName" {...form.register('applicantName')} placeholder="Alexandra Chen" />
+                <Input
+                  id="applicantName"
+                  {...form.register('applicantName')}
+                  placeholder="Alexandra Chen"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="email">Email</Label>
-                <Input id="email" type="email" {...form.register('email')} placeholder="alexandra@example.com" />
+                <Input
+                  id="email"
+                  type="email"
+                  {...form.register('email')}
+                  placeholder="alexandra@example.com"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
@@ -548,17 +697,33 @@ export function PaymentExperience() {
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="billingName">Billing Name</Label>
-                <Input id="billingName" {...form.register('billingName')} placeholder="Alexandra Chen" />
+                <Input
+                  id="billingName"
+                  {...form.register('billingName')}
+                  placeholder="Alexandra Chen"
+                />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
                 <Label htmlFor="couponCode">Coupon Code</Label>
-                <Input id="couponCode" {...form.register('couponCode')} placeholder="Optional promo code or DECLINED for sandbox failure" />
+                <Input
+                  id="couponCode"
+                  {...form.register('couponCode')}
+                  placeholder="Optional promo code or DECLINED for sandbox failure"
+                />
               </div>
               <label className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:col-span-2">
-                <input type="checkbox" className="mt-1 h-4 w-4 rounded border-white/[0.12] bg-navy-800 text-gold-500 focus:ring-gold-500/50" {...form.register('consent')} />
+                <input
+                  type="checkbox"
+                  className="mt-1 h-4 w-4 rounded border-white/[0.12] bg-navy-800 text-gold-500 focus:ring-gold-500/50"
+                  {...form.register('consent')}
+                />
                 <span>
-                  <span className="block text-sm font-medium text-foreground">I confirm the registration summary and amount are correct.</span>
-                  <span className="block text-xs text-muted-foreground">Orders are locked locally to prevent duplicate submissions.</span>
+                  <span className="block text-sm font-medium text-foreground">
+                    I confirm the registration summary and amount are correct.
+                  </span>
+                  <span className="block text-xs text-muted-foreground">
+                    Orders are locked locally to prevent duplicate submissions.
+                  </span>
                 </span>
               </label>
             </div>
@@ -568,8 +733,16 @@ export function PaymentExperience() {
                 <ShieldCheck size={13} className="text-gold-400" />
                 <span>{infoMessage}</span>
               </div>
-              <Button onClick={onSubmit} disabled={paymentMutation.isPending || hasActiveLock} className="w-full sm:w-auto">
-                {paymentMutation.isPending ? 'Processing…' : hasActiveLock ? 'Resume Existing Order' : 'Pay Securely'}
+              <Button
+                onClick={onSubmit}
+                disabled={paymentMutation.isPending || hasActiveLock}
+                className="w-full sm:w-auto"
+              >
+                {paymentMutation.isPending
+                  ? 'Processing…'
+                  : hasActiveLock
+                    ? 'Resume Existing Order'
+                    : 'Pay Securely'}
               </Button>
             </CardFooter>
           </SectionCard>
@@ -581,13 +754,25 @@ export function PaymentExperience() {
           <Card className="glass-card border-white/[0.08]">
             <CardHeader>
               <CardTitle className="text-base">Recovery Flow</CardTitle>
-              <CardDescription>Recover from refreshes, failed payments, or locked sessions.</CardDescription>
+              <CardDescription>
+                Recover from refreshes, failed payments, or locked sessions.
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button variant="outline" className="w-full" onClick={resumeSavedSession} disabled={!session || paymentStatus === 'success'}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={resumeSavedSession}
+                disabled={!session || paymentStatus === 'success'}
+              >
                 <RefreshCw size={14} /> Resume Saved Session
               </Button>
-              <Button variant="outline" className="w-full" onClick={retryFailedPayment} disabled={!hasFailedSession || paymentMutation.isPending}>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={retryFailedPayment}
+                disabled={!hasFailedSession || paymentMutation.isPending}
+              >
                 <RotateCcw size={14} /> Retry Failed Payment
               </Button>
               <Button variant="secondary" className="w-full" onClick={startFresh}>
@@ -597,8 +782,13 @@ export function PaymentExperience() {
                 <div className="flex items-center gap-2 text-gold-400">
                   <AlertTriangle size={13} /> Duplicate order protection is active
                 </div>
-                <p className="mt-2">If an order is already pending or processing, the app restores it instead of creating a new one.</p>
-                {lastRecoveryAction && <p className="mt-2 text-foreground">Last recovery action: {lastRecoveryAction}</p>}
+                <p className="mt-2">
+                  If an order is already pending or processing, the app restores it instead of
+                  creating a new one.
+                </p>
+                {lastRecoveryAction && (
+                  <p className="mt-2 text-foreground">Last recovery action: {lastRecoveryAction}</p>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -610,7 +800,9 @@ export function PaymentExperience() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-muted-foreground">
               <p>The current draft and active order are stored locally in the browser.</p>
-              <p>Refreshing the page restores the payment session and preserves the current order ID.</p>
+              <p>
+                Refreshing the page restores the payment session and preserves the current order ID.
+              </p>
               <p>Pending bank transfers remain visible until manual verification completes.</p>
             </CardContent>
           </Card>
@@ -619,7 +811,9 @@ export function PaymentExperience() {
             <Card className="glass-card border-red-500/20 bg-red-500/5">
               <CardHeader>
                 <CardTitle className="text-base text-red-200">Failure Recovery</CardTitle>
-                <CardDescription className="text-red-100/70">This payment failed and can be retried without creating a duplicate order.</CardDescription>
+                <CardDescription className="text-red-100/70">
+                  This payment failed and can be retried without creating a duplicate order.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-red-100/80">
                 <p>{session.failureReason}</p>
@@ -632,11 +826,15 @@ export function PaymentExperience() {
             <Card className="glass-card border-emerald-500/20 bg-emerald-500/5">
               <CardHeader>
                 <CardTitle className="text-base text-emerald-200">Payment Complete</CardTitle>
-                <CardDescription className="text-emerald-100/70">Order locked successfully with no duplicate submissions.</CardDescription>
+                <CardDescription className="text-emerald-100/70">
+                  Order locked successfully with no duplicate submissions.
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-emerald-100/80">
                 <p>Receipt: {session.receiptId}</p>
-                <p>You can safely leave this page or continue to another section of the dashboard.</p>
+                <p>
+                  You can safely leave this page or continue to another section of the dashboard.
+                </p>
               </CardContent>
               <CardFooter>
                 <Button asChild variant="outline" className="w-full">

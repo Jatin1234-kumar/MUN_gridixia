@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -9,8 +9,6 @@ import {
   CalendarCheck,
   ChevronRight,
   CircleDollarSign,
-  Clock,
-  FileCheck,
   LayoutList,
   Mail,
   MoreHorizontal,
@@ -23,6 +21,9 @@ import {
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
+import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
+import { useToast } from '@/components/shared/Toast';
+import { useDashboardStats } from '@/hooks/useDashboardStats';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -30,17 +31,9 @@ import { RevenueTrendChart } from '@/components/charts/RevenueTrendChart';
 import { RegistrationTrendChart } from '@/components/charts/RegistrationTrendChart';
 import { CommitteeOccupancyChart } from '@/components/charts/CommitteeOccupancyChart';
 import { AttendanceRateChart } from '@/components/charts/AttendanceRateChart';
-import { cn } from '@/lib/utils';
+import { cn, formatNumber } from '@/lib/utils';
 
-// ─── Mock Data ──────────────────────────────────────────────────────────────
-
-const METRICS = [
-  { title: 'Registrations', value: '1,284', delta: '+12.4% vs last event', deltaType: 'positive' as const, icon: Users, iconColor: 'text-gold-400' },
-  { title: 'Revenue', value: '₹18.6L', delta: '+8.2% vs target', deltaType: 'positive' as const, icon: CircleDollarSign, iconColor: 'text-emerald-400' },
-  { title: 'Attendance', value: '87.3%', delta: '+3.1% vs avg', deltaType: 'positive' as const, icon: CalendarCheck, iconColor: 'text-blue-400' },
-  { title: 'Certificates', value: '1,102', delta: '91% issued', deltaType: 'neutral' as const, icon: Award, iconColor: 'text-purple-400' },
-  { title: 'Check-ins', value: '1,048', delta: '-2.4% no-show', deltaType: 'negative' as const, icon: ScanLine, iconColor: 'text-amber-400' },
-];
+// ─── Fallback chart data (no API endpoints yet) ─────────────────────────────
 
 const revenueData = [
   { month: 'Jan', revenue: 240000, projected: undefined },
@@ -65,15 +58,6 @@ const registrationData = [
   { week: 'W8', registrations: 70, cancellations: 4, cumulative: 1280 },
 ];
 
-const committeeOccupancy = [
-  { name: 'Disarmament', abbr: 'DISEC', delegates: 42, capacity: 50 },
-  { name: 'Human Rights', abbr: 'UNHRC', delegates: 38, capacity: 45 },
-  { name: 'Security Council', abbr: 'UNSC', delegates: 30, capacity: 30 },
-  { name: 'Economic', abbr: 'ECOFIN', delegates: 28, capacity: 40 },
-  { name: 'Special Political', abbr: 'SPECPOL', delegates: 22, capacity: 35 },
-  { name: 'Environment', abbr: 'UNEP', delegates: 35, capacity: 40 },
-];
-
 const attendanceData = [
   { date: 'Day 1', rate: 92, target: 85 },
   { date: 'Day 2', rate: 88, target: 85 },
@@ -82,6 +66,8 @@ const attendanceData = [
   { date: 'Day 5', rate: 87, target: 85 },
   { date: 'Day 6', rate: 90, target: 85 },
 ];
+
+// ─── Activity Feed ──────────────────────────────────────────────────────────
 
 interface ActivityItem {
   id: string;
@@ -92,85 +78,77 @@ interface ActivityItem {
 }
 
 const recentActivity: ActivityItem[] = [
-  { id: '1', type: 'registration', title: 'New Registration', description: 'Priya Sharma registered for UNSC', time: '2 min ago' },
-  { id: '2', type: 'payment', title: 'Payment Received', description: '₹4,500 from Arjun Mehta — UPI', time: '5 min ago' },
-  { id: '3', type: 'checkin', title: 'Check-in Scanned', description: 'Delegate #1042 checked in at Gate A', time: '8 min ago' },
-  { id: '4', type: 'certificate', title: 'Certificate Issued', description: 'Best Delegate — DISEC issued to Rhea Patel', time: '12 min ago' },
-  { id: '5', type: 'allocation', title: 'Committee Assigned', description: 'Kabir Verma → UNHRC (Country: France)', time: '15 min ago' },
-  { id: '6', type: 'email', title: 'Email Sent', description: 'Payment confirmation to 3 delegates', time: '18 min ago' },
-  { id: '7', type: 'registration', title: 'New Registration', description: 'Ananya Reddy registered for ECOFIN', time: '22 min ago' },
-  { id: '8', type: 'payment', title: 'Payment Failed', description: '₹3,200 from Dev Joshi — retry queued', time: '25 min ago' },
-  { id: '9', type: 'checkin', title: 'Check-in Scanned', description: 'Delegate #1039 checked in at Gate B', time: '30 min ago' },
-  { id: '10', type: 'certificate', title: 'Certificate Issued', description: 'Honourable Mention — UNEP issued to Meera Iyer', time: '33 min ago' },
-];
-
-interface OperationCard {
-  title: string;
-  description: string;
-  icon: typeof Users;
-  color: string;
-  bgColor: string;
-  stat: string;
-  statLabel: string;
-  actions: Array<{ label: string; href: string }>;
-}
-
-const operations: OperationCard[] = [
   {
-    title: 'Committee Allocation',
-    description: 'Assign delegates to committees and manage country portfolios.',
-    icon: LayoutList,
-    color: 'text-blue-400',
-    bgColor: 'bg-blue-500/10 border-blue-500/20',
-    stat: '215',
-    statLabel: 'Unassigned',
-    actions: [
-      { label: 'Auto-allocate', href: '/country-allocation' },
-      { label: 'View all', href: '/committees' },
-    ],
+    id: '1',
+    type: 'registration',
+    title: 'New Registration',
+    description: 'Priya Sharma registered for UNSC',
+    time: '2 min ago',
   },
   {
-    title: 'Attendance Monitoring',
-    description: 'Track live check-ins, session attendance, and no-show rates.',
-    icon: ShieldCheck,
-    color: 'text-emerald-400',
-    bgColor: 'bg-emerald-500/10 border-emerald-500/20',
-    stat: '87.3%',
-    statLabel: 'Overall rate',
-    actions: [
-      { label: 'Open scanner', href: '/check-in' },
-      { label: 'Export report', href: '/reports' },
-    ],
+    id: '2',
+    type: 'payment',
+    title: 'Payment Received',
+    description: '₹4,500 from Arjun Mehta — UPI',
+    time: '5 min ago',
   },
   {
-    title: 'Payment Review',
-    description: 'Monitor transactions, refunds, and payment gateway health.',
-    icon: CircleDollarSign,
-    color: 'text-gold-400',
-    bgColor: 'bg-gold-500/10 border-gold-500/20',
-    stat: '₹18.6L',
-    statLabel: 'Collected',
-    actions: [
-      { label: 'Review pending', href: '/payments' },
-      { label: 'Refund queue', href: '/payments' },
-    ],
+    id: '3',
+    type: 'checkin',
+    title: 'Check-in Scanned',
+    description: 'Delegate #1042 checked in at Gate A',
+    time: '8 min ago',
   },
   {
-    title: 'Certificate Management',
-    description: 'Generate, issue, and distribute achievement certificates.',
-    icon: Award,
-    color: 'text-purple-400',
-    bgColor: 'bg-purple-500/10 border-purple-500/20',
-    stat: '182',
-    statLabel: 'Pending',
-    actions: [
-      { label: 'Bulk generate', href: '/certificate-vault' },
-      { label: 'View vault', href: '/certificate-vault' },
-    ],
+    id: '4',
+    type: 'certificate',
+    title: 'Certificate Issued',
+    description: 'Best Delegate — DISEC issued to Rhea Patel',
+    time: '12 min ago',
+  },
+  {
+    id: '5',
+    type: 'allocation',
+    title: 'Committee Assigned',
+    description: 'Kabir Verma → UNHRC (Country: France)',
+    time: '15 min ago',
+  },
+  {
+    id: '6',
+    type: 'email',
+    title: 'Email Sent',
+    description: 'Payment confirmation to 3 delegates',
+    time: '18 min ago',
+  },
+  {
+    id: '7',
+    type: 'registration',
+    title: 'New Registration',
+    description: 'Ananya Reddy registered for ECOFIN',
+    time: '22 min ago',
+  },
+  {
+    id: '8',
+    type: 'payment',
+    title: 'Payment Failed',
+    description: '₹3,200 from Dev Joshi — retry queued',
+    time: '25 min ago',
+  },
+  {
+    id: '9',
+    type: 'checkin',
+    title: 'Check-in Scanned',
+    description: 'Delegate #1039 checked in at Gate B',
+    time: '30 min ago',
+  },
+  {
+    id: '10',
+    type: 'certificate',
+    title: 'Certificate Issued',
+    description: 'Honourable Mention — UNEP issued to Meera Iyer',
+    time: '33 min ago',
   },
 ];
-
-// ─── Activity Feed ──────────────────────────────────────────────────────────
 
 const activityIcons: Record<ActivityItem['type'], typeof Users> = {
   registration: Users,
@@ -199,7 +177,12 @@ function ActivityFeedItem({ item, index }: { item: ActivityItem; index: number }
       transition={{ duration: 0.25, delay: index * 0.04 }}
       className="flex items-start gap-3 group"
     >
-      <div className={cn('mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border', activityColors[item.type])}>
+      <div
+        className={cn(
+          'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border',
+          activityColors[item.type],
+        )}
+      >
         <Icon size={14} />
       </div>
       <div className="flex-1 min-w-0">
@@ -248,6 +231,17 @@ function ChartCard({
 
 // ─── Operation Card ─────────────────────────────────────────────────────────
 
+interface OperationCard {
+  title: string;
+  description: string;
+  icon: typeof Users;
+  color: string;
+  bgColor: string;
+  stat: string;
+  statLabel: string;
+  actions: Array<{ label: string; href: string }>;
+}
+
 function OperationCard({ op, index }: { op: OperationCard; index: number }) {
   return (
     <motion.div
@@ -258,7 +252,12 @@ function OperationCard({ op, index }: { op: OperationCard; index: number }) {
       <Card className="glass-card overflow-hidden border-white/[0.08] hover:border-gold-500/20 transition-all duration-300 h-full">
         <CardHeader className="space-y-3">
           <div className="flex items-start justify-between">
-            <div className={cn('flex h-10 w-10 items-center justify-center rounded-xl border', op.bgColor)}>
+            <div
+              className={cn(
+                'flex h-10 w-10 items-center justify-center rounded-xl border',
+                op.bgColor,
+              )}
+            >
               <op.icon className={cn('h-4 w-4', op.color)} />
             </div>
             <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-muted-foreground">
@@ -267,17 +266,27 @@ function OperationCard({ op, index }: { op: OperationCard; index: number }) {
           </div>
           <div>
             <CardTitle className="text-sm text-foreground">{op.title}</CardTitle>
-            <CardDescription className="mt-1 text-xs leading-relaxed">{op.description}</CardDescription>
+            <CardDescription className="mt-1 text-xs leading-relaxed">
+              {op.description}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
             <p className="text-2xl font-bold text-foreground tabular-nums">{op.stat}</p>
-            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-0.5">{op.statLabel}</p>
+            <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground mt-0.5">
+              {op.statLabel}
+            </p>
           </div>
           <div className="flex gap-2">
             {op.actions.map((action) => (
-              <Button key={action.label} variant="outline" size="sm" className="flex-1 text-xs" asChild>
+              <Button
+                key={action.label}
+                variant="outline"
+                size="sm"
+                className="flex-1 text-xs"
+                asChild
+              >
                 <Link to={action.href}>
                   {action.label}
                   <ChevronRight size={12} />
@@ -293,12 +302,187 @@ function OperationCard({ op, index }: { op: OperationCard; index: number }) {
 
 // ─── Page ───────────────────────────────────────────────────────────────────
 
+function QuickStat({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: typeof Zap;
+  label: string;
+  value: string;
+  color: string;
+}) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <Icon size={14} className={color} />
+      <div>
+        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
+        <p className="text-sm font-semibold text-foreground tabular-nums">{value}</p>
+      </div>
+    </div>
+  );
+}
+
 export default function CommandCenter() {
   const [feedFilter, setFeedFilter] = useState<string>('all');
+  const { toast } = useToast();
+  const { data: stats, isLoading, refetch } = useDashboardStats();
 
-  const filteredActivity = feedFilter === 'all'
-    ? recentActivity
-    : recentActivity.filter((item) => item.type === feedFilter);
+  const filteredActivity =
+    feedFilter === 'all'
+      ? recentActivity
+      : recentActivity.filter((item) => item.type === feedFilter);
+
+  const handleRefresh = useCallback(() => {
+    refetch();
+    toast('Dashboard data refreshed.', 'success');
+  }, [refetch, toast]);
+
+  const handleExportReport = useCallback(() => {
+    const headers = ['Type', 'Title', 'Description', 'Time'];
+    const rows = recentActivity.map((item) => [item.type, item.title, item.description, item.time]);
+    const csvContent = [
+      headers.join(','),
+      ...rows.map((r) => r.map((c) => `"${c}"`).join(',')),
+    ].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = 'command-center-report.csv';
+    anchor.click();
+    URL.revokeObjectURL(url);
+    toast('Report exported as CSV.', 'success');
+  }, [toast]);
+
+  const metrics = stats?.metrics;
+  const committeeOccupancy = stats?.committeeOccupancy ?? [];
+
+  const metricCards = metrics
+    ? [
+        {
+          title: 'Total Delegates',
+          value: formatNumber(metrics.totalDelegates),
+          delta: `${metrics.confirmedDelegates} confirmed`,
+          deltaType: 'positive' as const,
+          icon: Users,
+          iconColor: 'text-gold-400',
+        },
+        {
+          title: 'Committees',
+          value: formatNumber(metrics.totalCommittees),
+          delta: `${metrics.activeEvents} active events`,
+          deltaType: 'neutral' as const,
+          icon: LayoutList,
+          iconColor: 'text-blue-400',
+        },
+        {
+          title: 'Occupancy',
+          value: `${metrics.occupancyRate}%`,
+          delta: `${formatNumber(metrics.filledSeats)} / ${formatNumber(metrics.totalCapacity)} seats`,
+          deltaType: metrics.occupancyRate > 80 ? ('positive' as const) : ('neutral' as const),
+          icon: CalendarCheck,
+          iconColor: 'text-emerald-400',
+        },
+        {
+          title: 'Pending',
+          value: formatNumber(metrics.pendingDelegates),
+          delta: `${metrics.waitlistedDelegates} waitlisted`,
+          deltaType: metrics.pendingDelegates > 0 ? ('negative' as const) : ('neutral' as const),
+          icon: ScanLine,
+          iconColor: 'text-amber-400',
+        },
+      ]
+    : [
+        {
+          title: 'Total Delegates',
+          value: '—',
+          delta: 'Loading...',
+          deltaType: 'neutral' as const,
+          icon: Users,
+          iconColor: 'text-gold-400',
+        },
+        {
+          title: 'Committees',
+          value: '—',
+          delta: 'Loading...',
+          deltaType: 'neutral' as const,
+          icon: LayoutList,
+          iconColor: 'text-blue-400',
+        },
+        {
+          title: 'Occupancy',
+          value: '—',
+          delta: 'Loading...',
+          deltaType: 'neutral' as const,
+          icon: CalendarCheck,
+          iconColor: 'text-emerald-400',
+        },
+        {
+          title: 'Pending',
+          value: '—',
+          delta: 'Loading...',
+          deltaType: 'neutral' as const,
+          icon: ScanLine,
+          iconColor: 'text-amber-400',
+        },
+      ];
+
+  const operations: OperationCard[] = [
+    {
+      title: 'Committee Allocation',
+      description: 'Assign delegates to committees and manage country portfolios.',
+      icon: LayoutList,
+      color: 'text-blue-400',
+      bgColor: 'bg-blue-500/10 border-blue-500/20',
+      stat: formatNumber(metrics?.pendingDelegates ?? 0),
+      statLabel: 'Pending allocation',
+      actions: [
+        { label: 'Auto-allocate', href: '/country-allocation' },
+        { label: 'View all', href: '/committees' },
+      ],
+    },
+    {
+      title: 'Attendance Monitoring',
+      description: 'Track live check-ins, session attendance, and no-show rates.',
+      icon: ShieldCheck,
+      color: 'text-emerald-400',
+      bgColor: 'bg-emerald-500/10 border-emerald-500/20',
+      stat: `${metrics?.occupancyRate ?? 0}%`,
+      statLabel: 'Occupancy rate',
+      actions: [
+        { label: 'Open scanner', href: '/check-in' },
+        { label: 'Export report', href: '/reports' },
+      ],
+    },
+    {
+      title: 'Payment Review',
+      description: 'Monitor transactions, refunds, and payment gateway health.',
+      icon: CircleDollarSign,
+      color: 'text-gold-400',
+      bgColor: 'bg-gold-500/10 border-gold-500/20',
+      stat: formatNumber(metrics?.confirmedDelegates ?? 0),
+      statLabel: 'Confirmed delegates',
+      actions: [
+        { label: 'Review pending', href: '/payments' },
+        { label: 'Refund queue', href: '/payments' },
+      ],
+    },
+    {
+      title: 'Certificate Management',
+      description: 'Generate, issue, and distribute achievement certificates.',
+      icon: Award,
+      color: 'text-purple-400',
+      bgColor: 'bg-purple-500/10 border-purple-500/20',
+      stat: formatNumber(metrics?.totalDelegates ?? 0),
+      statLabel: 'Total delegates',
+      actions: [
+        { label: 'Bulk generate', href: '/certificate-vault' },
+        { label: 'View vault', href: '/certificate-vault' },
+      ],
+    },
+  ];
 
   return (
     <div className="space-y-6 pb-8">
@@ -307,11 +491,11 @@ export default function CommandCenter() {
         subtitle="Real-time metrics, visualizations, operations, and activity monitoring"
         actions={
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline">
-              <RefreshCcw size={13} />
-              Refresh
+            <Button size="sm" variant="outline" onClick={handleRefresh} disabled={isLoading}>
+              <RefreshCcw size={13} className={isLoading ? 'animate-spin' : ''} />
+              {isLoading ? 'Refreshing...' : 'Refresh'}
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={handleExportReport}>
               <BarChart3 size={13} />
               Export Report
             </Button>
@@ -320,34 +504,64 @@ export default function CommandCenter() {
       />
 
       {/* ── Metrics ─────────────────────────────────────────────────────── */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-        {METRICS.map((metric, i) => (
-          <motion.div
-            key={metric.title}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3, delay: i * 0.05 }}
-          >
-            <StatCard {...metric} />
-          </motion.div>
-        ))}
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {isLoading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <Card key={i} className="glass-card border-white/[0.08]">
+                <CardContent className="p-5">
+                  <LoadingSpinner size="sm" />
+                </CardContent>
+              </Card>
+            ))
+          : metricCards.map((metric, i) => (
+              <motion.div
+                key={metric.title}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05 }}
+              >
+                <StatCard {...metric} />
+              </motion.div>
+            ))}
       </div>
 
       {/* ── Visualizations ──────────────────────────────────────────────── */}
       <div className="grid gap-4 lg:grid-cols-2">
-        <ChartCard title="Revenue Trends" description="Monthly collection with forward projection" icon={CircleDollarSign}>
+        <ChartCard
+          title="Revenue Trends"
+          description="Monthly collection with forward projection"
+          icon={CircleDollarSign}
+        >
           <RevenueTrendChart data={revenueData} />
         </ChartCard>
 
-        <ChartCard title="Registration Trends" description="Weekly registrations, cancellations, and cumulative" icon={Users}>
+        <ChartCard
+          title="Registration Trends"
+          description="Weekly registrations, cancellations, and cumulative"
+          icon={Users}
+        >
           <RegistrationTrendChart data={registrationData} />
         </ChartCard>
 
-        <ChartCard title="Committee Occupancy" description="Delegates assigned vs capacity per committee" icon={LayoutList}>
-          <CommitteeOccupancyChart data={committeeOccupancy} />
+        <ChartCard
+          title="Committee Occupancy"
+          description="Delegates assigned vs capacity per committee"
+          icon={LayoutList}
+        >
+          {isLoading ? (
+            <div className="flex h-[300px] items-center justify-center">
+              <LoadingSpinner />
+            </div>
+          ) : (
+            <CommitteeOccupancyChart data={committeeOccupancy} />
+          )}
         </ChartCard>
 
-        <ChartCard title="Attendance Rates" description="Daily check-in rates against 85% target" icon={CalendarCheck}>
+        <ChartCard
+          title="Attendance Rates"
+          description="Daily check-in rates against 85% target"
+          icon={CalendarCheck}
+        >
           <AttendanceRateChart data={attendanceData} />
         </ChartCard>
       </div>
@@ -394,10 +608,18 @@ export default function CommandCenter() {
             <Tabs value={feedFilter} onValueChange={setFeedFilter}>
               <TabsList className="w-full">
                 <TabsTrigger value="all">All</TabsTrigger>
-                <TabsTrigger value="registration">Reg</TabsTrigger>
-                <TabsTrigger value="payment">Pay</TabsTrigger>
-                <TabsTrigger value="checkin">Check-in</TabsTrigger>
-                <TabsTrigger value="certificate">Cert</TabsTrigger>
+                <TabsTrigger value="registration" title="Registrations">
+                  Reg
+                </TabsTrigger>
+                <TabsTrigger value="payment" title="Payments">
+                  Pay
+                </TabsTrigger>
+                <TabsTrigger value="checkin" title="Check-ins">
+                  Check-in
+                </TabsTrigger>
+                <TabsTrigger value="certificate" title="Certificates">
+                  Cert
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </CardHeader>
@@ -424,40 +646,38 @@ export default function CommandCenter() {
         <CardContent className="p-4">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-6">
-              <QuickStat icon={Zap} label="Queue Health" value="All Clear" color="text-emerald-400" />
-              <QuickStat icon={Mail} label="Emails Sent" value="2,847" color="text-blue-400" />
-              <QuickStat icon={FileCheck} label="DLQ Jobs" value="0" color="text-emerald-400" />
-              <QuickStat icon={Clock} label="Avg Processing" value="1.2s" color="text-gold-400" />
+              <QuickStat
+                icon={Zap}
+                label="Queue Health"
+                value="All Clear"
+                color="text-emerald-400"
+              />
+              <QuickStat
+                icon={Users}
+                label="Delegates"
+                value={formatNumber(metrics?.totalDelegates ?? 0)}
+                color="text-gold-400"
+              />
+              <QuickStat
+                icon={LayoutList}
+                label="Committees"
+                value={formatNumber(metrics?.totalCommittees ?? 0)}
+                color="text-blue-400"
+              />
+              <QuickStat
+                icon={CalendarCheck}
+                label="Occupancy"
+                value={`${metrics?.occupancyRate ?? 0}%`}
+                color="text-emerald-400"
+              />
             </div>
             <div className="flex items-center gap-2 text-[10px] font-mono text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-              Last sync: just now
+              Last sync: {isLoading ? 'updating...' : 'just now'}
             </div>
           </div>
         </CardContent>
       </Card>
-    </div>
-  );
-}
-
-function QuickStat({
-  icon: Icon,
-  label,
-  value,
-  color,
-}: {
-  icon: typeof Zap;
-  label: string;
-  value: string;
-  color: string;
-}) {
-  return (
-    <div className="flex items-center gap-2.5">
-      <Icon size={14} className={color} />
-      <div>
-        <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{label}</p>
-        <p className="text-sm font-semibold text-foreground tabular-nums">{value}</p>
-      </div>
     </div>
   );
 }

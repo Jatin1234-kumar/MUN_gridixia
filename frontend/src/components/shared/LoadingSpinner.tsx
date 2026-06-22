@@ -25,7 +25,7 @@ export function PageLoader() {
     <div className="flex h-[60vh] items-center justify-center">
       <div className="flex flex-col items-center gap-4">
         <LoadingSpinner size="lg" />
-        <p className="text-xs text-muted-foreground font-mono animate-pulse_gold">
+        <p className="text-xs text-muted-foreground font-mono animate-pulse">
           LOADING COMMAND CENTER…
         </p>
       </div>

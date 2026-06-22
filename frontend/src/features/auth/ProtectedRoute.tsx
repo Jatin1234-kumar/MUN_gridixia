@@ -8,7 +8,7 @@ export function ProtectedRoute() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#020818]">
+      <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-gold-500" />
           <p className="text-xs text-muted-foreground font-mono animate-pulse">AUTHENTICATING...</p>
@@ -36,7 +36,7 @@ export function RoleGuard({ roles, children, fallback }: RoleGuardProps) {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#020818]">
+      <div className="flex h-screen items-center justify-center bg-background">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-gold-500" />
       </div>
     );
@@ -50,7 +50,7 @@ export function RoleGuard({ roles, children, fallback }: RoleGuardProps) {
 
   if (!permitted) {
     if (fallback) return <>{fallback}</>;
-    return <Navigate to="/" replace />;
+    return <Navigate to="/dashboard" replace />;
   }
 
   return <>{children ?? <Outlet />}</>;

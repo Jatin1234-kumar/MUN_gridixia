@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { motion } from 'framer-motion';
 import {
-  AlertTriangle,
   BellRing,
   Clock3,
-  Filter,
   Info,
   MapPinned,
   Megaphone,
@@ -18,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { cn, formatDate } from '@/lib/utils';
+import { readJson, writeJson } from '@/lib/storage';
 
 const feedStorageKey = 'mun-gridixia:committee-feed-read:v1';
 
@@ -40,7 +39,8 @@ const initialFeed: CommitteeFeedItem[] = [
   {
     id: 'feed-1',
     title: 'Agenda Updated',
-    message: 'The UNSC agenda has been revised to emphasize crisis de-escalation and resolution drafting.',
+    message:
+      'The UNSC agenda has been revised to emphasize crisis de-escalation and resolution drafting.',
     committee: 'UNSC',
     category: 'agenda',
     priority: 'high',
@@ -101,7 +101,8 @@ const liveQueue: Omit<CommitteeFeedItem, 'createdAt' | 'unread'>[] = [
   {
     id: 'live-3',
     title: 'Schedule Changed',
-    message: 'A short recess has been added before voting procedure to accommodate committee admin.',
+    message:
+      'A short recess has been added before voting procedure to accommodate committee admin.',
     committee: 'All Committees',
     category: 'schedule',
     priority: 'normal',
@@ -117,23 +118,6 @@ const liveQueue: Omit<CommitteeFeedItem, 'createdAt' | 'unread'>[] = [
     live: true,
   },
 ];
-
-function readJson<T>(key: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeJson(key: string, value: unknown) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
 
 function categoryLabel(category: FeedCategory) {
   return {
@@ -166,7 +150,13 @@ function FeedIcon({ category }: { category: FeedCategory }) {
   return <Icon className="h-4 w-4" />;
 }
 
-function FeedItemRow({ item, onMarkRead }: { item: CommitteeFeedItem; onMarkRead: (id: string) => void }) {
+function FeedItemRow({
+  item,
+  onMarkRead,
+}: {
+  item: CommitteeFeedItem;
+  onMarkRead: (id: string) => void;
+}) {
   return (
     <motion.div
       initial={{ opacity: 0, y: 8 }}
@@ -174,11 +164,20 @@ function FeedItemRow({ item, onMarkRead }: { item: CommitteeFeedItem; onMarkRead
       transition={{ duration: 0.2 }}
       className={cn(
         'rounded-2xl border p-4 transition-all duration-200',
-        item.unread ? 'border-gold-500/20 bg-gold-500/10 shadow-[0_18px_42px_rgba(0,0,0,0.12)]' : 'border-white/[0.06] bg-white/[0.02]',
+        item.unread
+          ? 'border-gold-500/20 bg-gold-500/10 shadow-[0_18px_42px_rgba(0,0,0,0.12)]'
+          : 'border-white/[0.06] bg-white/[0.02]',
       )}
     >
       <div className="flex items-start gap-3">
-        <div className={cn('flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border', item.unread ? 'border-gold-500/25 bg-gold-500/15 text-gold-300' : 'border-white/[0.08] bg-navy-900/60 text-muted-foreground')}>
+        <div
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border',
+            item.unread
+              ? 'border-gold-500/25 bg-gold-500/15 text-gold-300'
+              : 'border-white/[0.08] bg-navy-900/60 text-muted-foreground',
+          )}
+        >
           <FeedIcon category={item.category} />
         </div>
 
@@ -189,7 +188,9 @@ function FeedItemRow({ item, onMarkRead }: { item: CommitteeFeedItem; onMarkRead
             {item.live && <Badge variant="active">Live</Badge>}
           </div>
 
-          <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">{item.committee}</p>
+          <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
+            {item.committee}
+          </p>
           <p className="text-sm text-foreground/90">{item.message}</p>
 
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs text-muted-foreground">
@@ -197,7 +198,11 @@ function FeedItemRow({ item, onMarkRead }: { item: CommitteeFeedItem; onMarkRead
               <Badge variant={priorityBadge(item.priority)}>{item.priority}</Badge>
               <span>{formatDate(item.createdAt)}</span>
             </div>
-            <button type="button" onClick={() => onMarkRead(item.id)} className="text-gold-400 transition-colors hover:text-gold-300">
+            <button
+              type="button"
+              onClick={() => onMarkRead(item.id)}
+              className="text-gold-400 transition-colors hover:text-gold-300"
+            >
               Mark read
             </button>
           </div>
@@ -214,7 +219,9 @@ export function LiveCommitteeFeed() {
 
   useEffect(() => {
     const storedReadIds = readJson<string[]>(feedStorageKey) ?? [];
-    setItems((current) => current.map((item) => ({ ...item, unread: !storedReadIds.includes(item.id) })));
+    setItems((current) =>
+      current.map((item) => ({ ...item, unread: !storedReadIds.includes(item.id) })),
+    );
   }, []);
 
   useEffect(() => {
@@ -240,7 +247,9 @@ export function LiveCommitteeFeed() {
 
     const storageListener = () => {
       const storedReadIds = readJson<string[]>(feedStorageKey) ?? [];
-      setItems((current) => current.map((item) => ({ ...item, unread: !storedReadIds.includes(item.id) })));
+      setItems((current) =>
+        current.map((item) => ({ ...item, unread: !storedReadIds.includes(item.id) })),
+      );
     };
 
     window.addEventListener('storage', storageListener);
@@ -260,7 +269,9 @@ export function LiveCommitteeFeed() {
     const storedReadIds = new Set(readJson<string[]>(feedStorageKey) ?? []);
     storedReadIds.add(id);
     writeJson(feedStorageKey, Array.from(storedReadIds));
-    setItems((current) => current.map((item) => (item.id === id ? { ...item, unread: false } : item)));
+    setItems((current) =>
+      current.map((item) => (item.id === id ? { ...item, unread: false } : item)),
+    );
   };
 
   const markAllRead = () => {
@@ -276,10 +287,13 @@ export function LiveCommitteeFeed() {
       <CardHeader className="space-y-4 border-b border-white/[0.06] bg-white/[0.015]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <CardDescription className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground">Live Committee Feed</CardDescription>
+            <CardDescription className="text-[10px] uppercase tracking-[0.32em] text-muted-foreground">
+              Live Committee Feed
+            </CardDescription>
             <CardTitle className="mt-2 text-2xl text-foreground">Announcements</CardTitle>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Keep delegates informed with agenda updates, room changes, schedule changes, and background guide uploads.
+              Keep delegates informed with agenda updates, room changes, schedule changes, and
+              background guide uploads.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3">
@@ -292,7 +306,11 @@ export function LiveCommitteeFeed() {
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Tabs value={filter} onValueChange={(value) => setFilter(value as FeedCategory)} className="w-full">
+          <Tabs
+            value={filter}
+            onValueChange={(value) => setFilter(value as FeedCategory)}
+            className="w-full"
+          >
             <div className="flex flex-wrap items-center gap-3">
               <TabsList className="flex h-auto flex-wrap justify-start rounded-2xl p-1.5">
                 <TabsTrigger value="all">All</TabsTrigger>
@@ -317,8 +335,12 @@ export function LiveCommitteeFeed() {
               <div className="flex items-center gap-3">
                 <BellRing className="h-4 w-4 text-gold-400" />
                 <div>
-                  <p className="text-sm font-medium text-foreground">{categoryLabel(filter)} Updates</p>
-                  <p className="text-xs text-muted-foreground">{filteredUnread} unread in this filter</p>
+                  <p className="text-sm font-medium text-foreground">
+                    {categoryLabel(filter)} Updates
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {filteredUnread} unread in this filter
+                  </p>
                 </div>
               </div>
               <Badge variant="default">Realtime</Badge>
@@ -334,7 +356,9 @@ export function LiveCommitteeFeed() {
                     <Info className="h-5 w-5" />
                   </div>
                   <p className="mt-4 text-sm font-medium text-foreground">No announcements yet</p>
-                  <p className="mt-1 text-sm text-muted-foreground">New committee updates will appear here automatically as they arrive.</p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    New committee updates will appear here automatically as they arrive.
+                  </p>
                 </div>
               )}
             </div>
@@ -344,10 +368,30 @@ export function LiveCommitteeFeed() {
         <Separator className="my-5" />
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryCard title="Agenda" value={items.filter((item) => item.category === 'agenda').length.toString()} description="Agenda updates tracked" icon={Megaphone} />
-          <SummaryCard title="Logistics" value={items.filter((item) => item.category === 'logistics').length.toString()} description="Room and venue notices" icon={MapPinned} />
-          <SummaryCard title="Schedule" value={items.filter((item) => item.category === 'schedule').length.toString()} description="Timing adjustments" icon={Clock3} />
-          <SummaryCard title="Resources" value={items.filter((item) => item.category === 'resources').length.toString()} description="Guides and attachments" icon={Upload} />
+          <SummaryCard
+            title="Agenda"
+            value={items.filter((item) => item.category === 'agenda').length.toString()}
+            description="Agenda updates tracked"
+            icon={Megaphone}
+          />
+          <SummaryCard
+            title="Logistics"
+            value={items.filter((item) => item.category === 'logistics').length.toString()}
+            description="Room and venue notices"
+            icon={MapPinned}
+          />
+          <SummaryCard
+            title="Schedule"
+            value={items.filter((item) => item.category === 'schedule').length.toString()}
+            description="Timing adjustments"
+            icon={Clock3}
+          />
+          <SummaryCard
+            title="Resources"
+            value={items.filter((item) => item.category === 'resources').length.toString()}
+            description="Guides and attachments"
+            icon={Upload}
+          />
         </div>
       </CardContent>
     </Card>

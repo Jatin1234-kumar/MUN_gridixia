@@ -7,10 +7,57 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 
+interface ToggleItem {
+  label: string;
+  description: string;
+  enabled: boolean;
+}
+
+function Toggle({ item, onToggle }: { item: ToggleItem; onToggle: () => void }) {
+  return (
+    <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+      <div>
+        <p className="text-sm font-medium text-foreground">{item.label}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={item.enabled}
+        aria-label={`${item.label}: ${item.enabled ? 'enabled' : 'disabled'}`}
+        onClick={onToggle}
+        className={`h-5 w-9 rounded-full transition-colors ${item.enabled ? 'bg-gold-500' : 'bg-navy-700'} relative cursor-pointer focus:outline-none focus:ring-2 focus:ring-gold-500/50 focus:ring-offset-2 focus:ring-offset-navy-950`}
+      >
+        <span className="sr-only">
+          {item.enabled ? 'Disable' : 'Enable'} {item.label}
+        </span>
+        <div
+          className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${item.enabled ? 'left-[18px]' : 'left-0.5'}`}
+        />
+      </button>
+    </div>
+  );
+}
+
 export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [orgName, setOrgName] = useState('MUN Gridixia');
   const [contactEmail, setContactEmail] = useState('admin@mungridixia.org');
+  const [toggles, setToggles] = useState<ToggleItem[]>([
+    { label: 'Payment confirmations', description: 'Email on successful payments', enabled: true },
+    { label: 'Registration updates', description: 'Notify when delegates register', enabled: true },
+    {
+      label: 'Committee allocations',
+      description: 'Notify on committee assignments',
+      enabled: false,
+    },
+  ]);
+
+  function handleToggle(index: number) {
+    setToggles((prev) =>
+      prev.map((item, i) => (i === index ? { ...item, enabled: !item.enabled } : item)),
+    );
+  }
 
   function handleSave() {
     setSaved(true);
@@ -31,10 +78,7 @@ export default function Settings() {
       />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-        >
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
           <Card className="glass-card overflow-hidden border-white/[0.08]">
             <CardHeader className="space-y-3 border-b border-white/[0.06] bg-white/[0.015]">
               <div className="flex items-center gap-3">
@@ -49,12 +93,27 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="space-y-4 p-5">
               <div className="space-y-2">
-                <Label htmlFor="org-name" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Organization Name</Label>
+                <Label
+                  htmlFor="org-name"
+                  className="text-xs font-mono uppercase tracking-widest text-muted-foreground"
+                >
+                  Organization Name
+                </Label>
                 <Input id="org-name" value={orgName} onChange={(e) => setOrgName(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="contact-email" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">Contact Email</Label>
-                <Input id="contact-email" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+                <Label
+                  htmlFor="contact-email"
+                  className="text-xs font-mono uppercase tracking-widest text-muted-foreground"
+                >
+                  Contact Email
+                </Label>
+                <Input
+                  id="contact-email"
+                  type="email"
+                  value={contactEmail}
+                  onChange={(e) => setContactEmail(e.target.value)}
+                />
               </div>
             </CardContent>
           </Card>
@@ -79,20 +138,8 @@ export default function Settings() {
             </CardHeader>
             <CardContent className="p-5">
               <div className="space-y-3">
-                {[
-                  { label: 'Payment confirmations', description: 'Email on successful payments', enabled: true },
-                  { label: 'Registration updates', description: 'Notify when delegates register', enabled: true },
-                  { label: 'Committee allocations', description: 'Notify on committee assignments', enabled: false },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                    <div>
-                      <p className="text-sm font-medium text-foreground">{item.label}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
-                    </div>
-                    <div className={`h-5 w-9 rounded-full transition-colors ${item.enabled ? 'bg-gold-500' : 'bg-navy-700'} relative cursor-pointer`}>
-                      <div className={`absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform ${item.enabled ? 'left-[18px]' : 'left-0.5'}`} />
-                    </div>
-                  </div>
+                {toggles.map((item, index) => (
+                  <Toggle key={item.label} item={item} onToggle={() => handleToggle(index)} />
                 ))}
               </div>
             </CardContent>
@@ -120,11 +167,15 @@ export default function Settings() {
               <div className="space-y-3">
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                   <p className="text-sm font-medium text-foreground">Two-Factor Authentication</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Add an extra layer of security to your account</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Add an extra layer of security to your account
+                  </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                   <p className="text-sm font-medium text-foreground">Session Management</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">View and revoke active sessions</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    View and revoke active sessions
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -152,11 +203,15 @@ export default function Settings() {
               <div className="space-y-3">
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                   <p className="text-sm font-medium text-foreground">Payment Gateway</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Razorpay integration status: <span className="text-emerald-400">Connected</span></p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Razorpay integration status: <span className="text-emerald-400">Connected</span>
+                  </p>
                 </div>
                 <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
                   <p className="text-sm font-medium text-foreground">Email Service</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">Resend integration status: <span className="text-emerald-400">Connected</span></p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Resend integration status: <span className="text-emerald-400">Connected</span>
+                  </p>
                 </div>
               </div>
             </CardContent>

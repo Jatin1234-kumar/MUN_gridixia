@@ -17,7 +17,8 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { cn, formatDate, formatNumber } from '@/lib/utils';
+import { cn } from '@/lib/utils';
+import { readJson, writeJson } from '@/lib/storage';
 import type { DelegateApplicationDraft, PaymentSession } from '@/types';
 
 const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
@@ -50,23 +51,6 @@ interface BarcodeDetectorConstructor {
 type LocalWindow = Window & {
   BarcodeDetector?: BarcodeDetectorConstructor;
 };
-
-function readJson<T>(key: string): T | undefined {
-  if (typeof window === 'undefined') return undefined;
-
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return undefined;
-    return JSON.parse(raw) as T;
-  } catch {
-    return undefined;
-  }
-}
-
-function writeJson(key: string, value: unknown) {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(key, JSON.stringify(value));
-}
 
 function formatTimestamp(value: string) {
   return new Intl.DateTimeFormat('en-US', {
@@ -106,7 +90,9 @@ function ticketNumberFromSession(session?: PaymentSession) {
 
 function generateSuccessTone() {
   try {
-    const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    const AudioContextCtor =
+      window.AudioContext ||
+      (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
     if (!AudioContextCtor) return;
 
     const context = new AudioContextCtor();
@@ -135,7 +121,12 @@ function CameraFrame({ status, message }: { status: ScannerStatus; message: stri
   const isError = status === 'error';
 
   return (
-    <div className={cn('relative overflow-hidden rounded-[28px] border bg-[#06101d] shadow-2xl shadow-black/35', isSuccess ? 'border-emerald-500/30' : isError ? 'border-red-500/30' : 'border-white/[0.08]')}>
+    <div
+      className={cn(
+        'relative overflow-hidden rounded-[28px] border bg-[#06101d] shadow-2xl shadow-black/35',
+        isSuccess ? 'border-emerald-500/30' : isError ? 'border-red-500/30' : 'border-white/[0.08]',
+      )}
+    >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(212,175,55,0.16),transparent_55%)]" />
       <div className="absolute inset-4 rounded-[24px] border border-white/10" />
       <div className="absolute left-4 top-4 h-10 w-10 rounded-tl-[18px] border-l-2 border-t-2 border-white/30" />
@@ -143,13 +134,23 @@ function CameraFrame({ status, message }: { status: ScannerStatus; message: stri
       <div className="absolute bottom-4 left-4 h-10 w-10 rounded-bl-[18px] border-b-2 border-l-2 border-white/30" />
       <div className="absolute bottom-4 right-4 h-10 w-10 rounded-br-[18px] border-b-2 border-r-2 border-white/30" />
 
-      <div className={cn('absolute inset-0 transition-colors duration-300', isSuccess && 'bg-emerald-500/10', isError && 'bg-red-500/10')} />
+      <div
+        className={cn(
+          'absolute inset-0 transition-colors duration-300',
+          isSuccess && 'bg-emerald-500/10',
+          isError && 'bg-red-500/10',
+        )}
+      />
 
-      <div className="relative z-10 flex min-h-[420px] flex-col justify-between p-5 sm:min-h-[520px]">
+      <div className="relative z-10 flex min-h-[320px] flex-col justify-between p-5 sm:min-h-[420px]">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-[10px] uppercase tracking-[0.32em] text-white/45">Live Camera View</p>
-            <p className="mt-2 text-sm text-white/70">Align the delegate QR inside the frame for instant check-in.</p>
+            <p className="text-[10px] uppercase tracking-[0.32em] text-white/60">
+              Live Camera View
+            </p>
+            <p className="mt-2 text-sm text-white/70">
+              Align the delegate QR inside the frame for instant check-in.
+            </p>
           </div>
           <Badge variant={isSuccess ? 'active' : isError ? 'urgent' : 'pending'}>
             {isSuccess ? 'Verified' : isError ? 'Error' : 'Scanning'}
@@ -157,11 +158,32 @@ function CameraFrame({ status, message }: { status: ScannerStatus; message: stri
         </div>
 
         <div className="flex items-center justify-center">
-          <div className={cn('relative aspect-[3/4] w-full max-w-[430px] overflow-hidden rounded-[24px] border border-white/10 bg-black/60', isSuccess && 'ring-2 ring-emerald-400/60', isError && 'ring-2 ring-red-400/60')}>
-            <video id="checkin-video" className="h-full w-full object-cover" autoPlay muted playsInline />
+          <div
+            className={cn(
+              'relative aspect-[3/4] w-full max-w-[430px] overflow-hidden rounded-[24px] border border-white/10 bg-black/60',
+              isSuccess && 'ring-2 ring-emerald-400/60',
+              isError && 'ring-2 ring-red-400/60',
+            )}
+          >
+            <video
+              id="checkin-video"
+              className="h-full w-full object-cover"
+              autoPlay
+              muted
+              playsInline
+            />
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-transparent" />
             <div className="pointer-events-none absolute inset-0">
-              <div className={cn('absolute left-1/2 top-1/2 h-[72%] w-[72%] -translate-x-1/2 -translate-y-1/2 rounded-[24px] border-2', isSuccess ? 'border-emerald-400/70 shadow-[0_0_0_9999px_rgba(16,185,129,0.12)]' : isError ? 'border-red-400/70 shadow-[0_0_0_9999px_rgba(239,68,68,0.12)]' : 'border-gold-400/70 shadow-[0_0_0_9999px_rgba(212,175,55,0.08)]')} />
+              <div
+                className={cn(
+                  'absolute left-1/2 top-1/2 h-[72%] w-[72%] -translate-x-1/2 -translate-y-1/2 rounded-[24px] border-2',
+                  isSuccess
+                    ? 'border-emerald-400/70 shadow-[0_0_0_9999px_rgba(16,185,129,0.12)]'
+                    : isError
+                      ? 'border-red-400/70 shadow-[0_0_0_9999px_rgba(239,68,68,0.12)]'
+                      : 'border-gold-400/70 shadow-[0_0_0_9999px_rgba(212,175,55,0.08)]',
+                )}
+              />
               <div className="absolute left-1/2 top-[14%] h-[72%] w-1 -translate-x-1/2 bg-gradient-to-b from-transparent via-gold-300/80 to-transparent opacity-70 animate-pulse" />
             </div>
           </div>
@@ -169,15 +191,21 @@ function CameraFrame({ status, message }: { status: ScannerStatus; message: stri
 
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/45">Scanner</p>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Scanner</p>
             <p className="mt-2 text-sm text-white">Native QR detection</p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/45">Overlay</p>
-            <p className="mt-2 text-sm text-white">{isSuccess ? 'Green verification lane' : isError ? 'Red rejection lane' : 'Centered camera guide'}</p>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Overlay</p>
+            <p className="mt-2 text-sm text-white">
+              {isSuccess
+                ? 'Green verification lane'
+                : isError
+                  ? 'Red rejection lane'
+                  : 'Centered camera guide'}
+            </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-            <p className="text-[10px] uppercase tracking-[0.3em] text-white/45">Status</p>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Status</p>
             <p className="mt-2 text-sm text-white">{message}</p>
           </div>
         </div>
@@ -219,7 +247,10 @@ export default function CheckInScanner() {
   const [record, setRecord] = useState<CheckInRecord | undefined>(undefined);
 
   const delegateName = session?.applicantName || draft?.personal.fullName || 'Delegate Pending';
-  const committeeName = session?.committeeName || draft?.committeePreference.preferredCommitteeName || 'Awaiting committee';
+  const committeeName =
+    session?.committeeName ||
+    draft?.committeePreference.preferredCommitteeName ||
+    'Awaiting committee';
   const country = draft?.countryPreference.firstChoiceCountry || 'Awaiting country';
   const ticket = ticketNumberFromSession(session);
   const canCheckIn = session?.status === 'success';
@@ -286,15 +317,15 @@ export default function CheckInScanner() {
             const rawValue = results?.[0]?.rawValue?.trim();
             if (!rawValue) return;
 
-            const expectedTokens = new Set([
-              ticket,
-              session?.orderId,
-              session?.receiptId,
-              delegateName,
-              committeeName,
-            ].filter(Boolean).map((value) => String(value).toLowerCase()));
+            const expectedTokens = new Set(
+              [ticket, session?.orderId, session?.receiptId, delegateName, committeeName]
+                .filter(Boolean)
+                .map((value) => String(value).toLowerCase()),
+            );
 
-            const matched = expectedTokens.has(rawValue.toLowerCase()) || expectedTokens.some((token) => rawValue.toLowerCase().includes(token));
+            const matched =
+              expectedTokens.has(rawValue.toLowerCase()) ||
+              expectedTokens.some((token) => rawValue.toLowerCase().includes(token));
 
             if (!matched) {
               scanLockRef.current = true;
@@ -361,7 +392,17 @@ export default function CheckInScanner() {
       }
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [canCheckIn, committeeName, country, delegateName, existingRecord, session?.orderId, session?.receiptId, scannerStatus, ticket]);
+  }, [
+    canCheckIn,
+    committeeName,
+    country,
+    delegateName,
+    existingRecord,
+    session?.orderId,
+    session?.receiptId,
+    scannerStatus,
+    ticket,
+  ]);
 
   useEffect(() => {
     if (scannerStatus === 'success') {
@@ -384,10 +425,19 @@ export default function CheckInScanner() {
     }
 
     setScannerStatus(canCheckIn ? 'ready' : 'error');
-    setMessage(canCheckIn ? 'Camera active. Hold a QR code inside the frame.' : 'Check-in is locked until the delegate pass is confirmed.');
+    setMessage(
+      canCheckIn
+        ? 'Camera active. Hold a QR code inside the frame.'
+        : 'Check-in is locked until the delegate pass is confirmed.',
+    );
   };
 
-  const overlayTone = scannerStatus === 'success' ? 'border-emerald-500/30 bg-emerald-500/10' : scannerStatus === 'error' ? 'border-red-500/30 bg-red-500/10' : 'border-gold-500/30 bg-gold-500/10';
+  const overlayTone =
+    scannerStatus === 'success'
+      ? 'border-emerald-500/30 bg-emerald-500/10'
+      : scannerStatus === 'error'
+        ? 'border-red-500/30 bg-red-500/10'
+        : 'border-gold-500/30 bg-gold-500/10';
 
   return (
     <div className="space-y-6 pb-8">
@@ -408,7 +458,11 @@ export default function CheckInScanner() {
       />
 
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.25 }}
+        >
           {scannerStatus === 'loading' ? (
             <Card className="glass-card border-white/[0.08]">
               <CardContent className="flex min-h-[520px] items-center justify-center p-6">
@@ -416,7 +470,9 @@ export default function CheckInScanner() {
                   <LoadingSpinner size="lg" />
                   <div>
                     <p className="text-sm font-medium text-foreground">Starting camera</p>
-                    <p className="mt-1 text-sm text-muted-foreground">Requesting permission and preparing QR detection.</p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Requesting permission and preparing QR detection.
+                    </p>
                   </div>
                 </div>
               </CardContent>
@@ -430,18 +486,35 @@ export default function CheckInScanner() {
           <Card className={cn('overflow-hidden border text-white', overlayTone)}>
             <CardHeader className="border-b border-white/10 bg-white/[0.03]">
               <div className="flex items-center gap-3">
-                <div className={cn('flex h-11 w-11 items-center justify-center rounded-2xl border', scannerStatus === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : scannerStatus === 'error' ? 'border-red-500/30 bg-red-500/10 text-red-300' : 'border-gold-500/30 bg-gold-500/10 text-gold-300')}>
-                  {scannerStatus === 'success' ? <CheckCircle2 className="h-5 w-5" /> : scannerStatus === 'error' ? <ShieldAlert className="h-5 w-5" /> : <ScanLine className="h-5 w-5" />}
+                <div
+                  className={cn(
+                    'flex h-11 w-11 items-center justify-center rounded-2xl border',
+                    scannerStatus === 'success'
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                      : scannerStatus === 'error'
+                        ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                        : 'border-gold-500/30 bg-gold-500/10 text-gold-300',
+                  )}
+                >
+                  {scannerStatus === 'success' ? (
+                    <CheckCircle2 className="h-5 w-5" />
+                  ) : scannerStatus === 'error' ? (
+                    <ShieldAlert className="h-5 w-5" />
+                  ) : (
+                    <ScanLine className="h-5 w-5" />
+                  )}
                 </div>
                 <div>
                   <CardTitle className="text-base text-white">Scanner Status</CardTitle>
-                  <CardDescription className="text-white/65">Mobile-optimized check-in workflow</CardDescription>
+                  <CardDescription className="text-white/65">
+                    Mobile-optimized check-in workflow
+                  </CardDescription>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4 p-5">
               <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <p className="text-[10px] uppercase tracking-[0.3em] text-white/45">Message</p>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Message</p>
                 <p className="mt-2 text-sm text-white">{errorMessage || message}</p>
               </div>
 
@@ -456,9 +529,15 @@ export default function CheckInScanner() {
                     <DetailsCard title="Committee" value={record.committee} icon={Wallet} />
                     <DetailsCard title="Country" value={record.country} icon={Sparkles} />
                     <DetailsCard title="Ticket" value={record.ticketNumber} icon={ScanLine} />
-                    <DetailsCard title="Checked-In" value={formatTimestamp(record.checkedInAt)} icon={Clock3} />
+                    <DetailsCard
+                      title="Checked-In"
+                      value={formatTimestamp(record.checkedInAt)}
+                      icon={Clock3}
+                    />
                   </div>
-                  <p className="text-sm text-emerald-100/80">Success sound played and the check-in timestamp has been saved locally.</p>
+                  <p className="text-sm text-emerald-100/80">
+                    Success sound played and the check-in timestamp has been saved locally.
+                  </p>
                 </div>
               )}
 
@@ -470,10 +549,16 @@ export default function CheckInScanner() {
                   </div>
                   <p className="text-lg font-semibold text-white">{record.delegateName}</p>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <DetailsCard title="Timestamp" value={formatTimestamp(record.checkedInAt)} icon={Clock3} />
+                    <DetailsCard
+                      title="Timestamp"
+                      value={formatTimestamp(record.checkedInAt)}
+                      icon={Clock3}
+                    />
                     <DetailsCard title="Ticket" value={record.ticketNumber} icon={ScanLine} />
                   </div>
-                  <p className="text-sm text-amber-100/80">This pass was already processed. No duplicate entry was created.</p>
+                  <p className="text-sm text-amber-100/80">
+                    This pass was already processed. No duplicate entry was created.
+                  </p>
                 </div>
               )}
 
@@ -509,8 +594,16 @@ export default function CheckInScanner() {
           <Card className="glass-card border-white/[0.08]">
             <CardContent className="flex flex-wrap items-center justify-between gap-4 p-5">
               <div>
-                <p className="text-sm font-medium text-foreground">{canCheckIn ? 'Camera ready for live scans' : 'Check-in locked until pass verification'}</p>
-                <p className="mt-1 text-sm text-muted-foreground">{canCheckIn ? 'Scan a valid delegate QR to record attendance instantly.' : 'Open the delegate pass and complete payment first.'}</p>
+                <p className="text-sm font-medium text-foreground">
+                  {canCheckIn
+                    ? 'Camera ready for live scans'
+                    : 'Check-in locked until pass verification'}
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  {canCheckIn
+                    ? 'Scan a valid delegate QR to record attendance instantly.'
+                    : 'Open the delegate pass and complete payment first.'}
+                </p>
               </div>
               <Button size="sm" variant="outline" onClick={handleRestart}>
                 <RefreshCcw size={14} />
