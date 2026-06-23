@@ -55,7 +55,6 @@ export function createWorker<T, R = unknown>({
 
       return result;
     } catch (err) {
-      metrics.active--;
       metrics.failed++;
       const duration = Date.now() - start;
       const error = err instanceof Error ? err : new Error(String(err));
@@ -88,19 +87,14 @@ export function createWorker<T, R = unknown>({
   const worker = new Worker<T, R>(queueName, wrappedProcessor, opts);
 
   worker.on('active', (job) => {
-    metrics.active++;
     log.debug(`job ${job.id} picked up`, { jobId: job.id! });
   });
 
   worker.on('completed', (job) => {
-    metrics.processed++;
     log.info(`job ${job.id} done`, { jobId: job.id! });
   });
 
   worker.on('failed', (job, err) => {
-    metrics.active = Math.max(0, metrics.active - 1);
-    metrics.failed++;
-
     if (!job) return;
 
     const remaining = (job.opts.attempts ?? 1) - job.attemptsMade - 1;
@@ -121,7 +115,10 @@ export function createWorker<T, R = unknown>({
         scope.setTag('dlq', 'true');
         scope.setLevel('error');
         scope.setExtra('job_data', job.data);
-        Sentry.captureMessage(`Job ${job.id} sent to DLQ after ${job.attemptsMade} attempts`, 'error');
+        Sentry.captureMessage(
+          `Job ${job.id} sent to DLQ after ${job.attemptsMade} attempts`,
+          'error',
+        );
       });
 
       getDeadLetterQueue()

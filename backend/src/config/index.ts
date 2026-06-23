@@ -24,6 +24,9 @@ export const config = {
   },
   redis: { url: env.REDIS_URL },
   sentry: { dsn: env.SENTRY_DSN },
+  cors: {
+    origins: env.CORS_ORIGINS ? env.CORS_ORIGINS.split(',').map((o) => o.trim()) : [],
+  },
   isDev: env.NODE_ENV === 'development',
   isProd: env.NODE_ENV === 'production',
 };

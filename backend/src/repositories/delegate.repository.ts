@@ -1,43 +1,49 @@
-import { Delegate } from '../types';
-import { CreateDelegateDto, UpdateDelegateDto } from '../validators/delegate.validator';
-
-const store = new Map<string, Delegate>();
+import { Types } from 'mongoose';
+import { DelegateModel } from '../models/Delegate';
+import type { CreateDelegateDto, UpdateDelegateDto } from '../validators/delegate.validator';
 
 export const delegateRepository = {
-  findAll(): Delegate[] {
-    return Array.from(store.values());
+  findAll() {
+    return DelegateModel.find({ isDeleted: { $ne: true } })
+      .sort({ name: 1 })
+      .lean()
+      .exec();
   },
 
-  findById(id: string): Delegate | undefined {
-    return store.get(id);
+  findById(id: string) {
+    return DelegateModel.findById(id).lean().exec();
   },
 
-  findByCommittee(committee: string): Delegate[] {
-    return Array.from(store.values()).filter((d) => d.committee === committee);
+  findByCommittee(committee: string) {
+    return DelegateModel.find({ committee, isDeleted: { $ne: true } })
+      .sort({ name: 1 })
+      .lean()
+      .exec();
   },
 
-  create(dto: CreateDelegateDto): Delegate {
-    const delegate: Delegate = {
-      ...dto,
-      id:           crypto.randomUUID(),
-      status:       'pending',
-      registeredAt: new Date().toISOString(),
-      createdAt:    new Date(),
-      updatedAt:    new Date(),
-    };
-    store.set(delegate.id, delegate);
-    return delegate;
+  create(dto: CreateDelegateDto) {
+    return DelegateModel.create(dto);
   },
 
-  update(id: string, dto: UpdateDelegateDto): Delegate | undefined {
-    const existing = store.get(id);
-    if (!existing) return undefined;
-    const updated: Delegate = { ...existing, ...dto, updatedAt: new Date() };
-    store.set(id, updated);
-    return updated;
+  update(id: string, dto: UpdateDelegateDto) {
+    return DelegateModel.findByIdAndUpdate(id, { $set: dto }, { new: true, runValidators: true })
+      .lean()
+      .exec();
   },
 
-  delete(id: string): boolean {
-    return store.delete(id);
+  softDelete(id: string, deletedBy?: string) {
+    return DelegateModel.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: deletedBy ? new Types.ObjectId(deletedBy) : null,
+        },
+      },
+      { new: true },
+    )
+      .lean()
+      .exec();
   },
 };

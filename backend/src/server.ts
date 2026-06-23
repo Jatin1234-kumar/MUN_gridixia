@@ -24,10 +24,16 @@ const server = app.listen(config.port, () => {
 async function shutdown(signal: string): Promise<void> {
   log.info(`${signal} received — shutting down`);
   server.close(async () => {
-    await stopJobs();
-    await closeAllQueues();
-    await closeRedisConnection();
-    await flushSentry();
+    const results = await Promise.allSettled([
+      stopJobs(),
+      closeAllQueues(),
+      closeRedisConnection(),
+      flushSentry(),
+    ]);
+    for (const r of results) {
+      if (r.status === 'rejected')
+        log.error('shutdown step failed', { error: (r.reason as Error).message });
+    }
     log.info('shutdown complete');
     process.exit(0);
   });

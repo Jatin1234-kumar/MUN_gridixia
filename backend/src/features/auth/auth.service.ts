@@ -54,13 +54,26 @@ export const AuthService = {
     if (existing) throw new AppError(409, 'Email already in use');
 
     const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
-    const user = await AuthRepository.create({
-      firstName: data.firstName,
-      lastName: data.lastName,
-      email: data.email,
-      passwordHash,
-      role: data.role ?? 'delegate',
-    });
+    let user;
+    try {
+      user = await AuthRepository.create({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        passwordHash,
+        role: data.role ?? 'delegate',
+      });
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code: number }).code === 11000
+      ) {
+        throw new AppError(409, 'Email already in use');
+      }
+      throw err;
+    }
 
     await AuthRepository.logAudit({
       actorId: user._id,
@@ -71,7 +84,11 @@ export const AuthService = {
       userAgent: data.userAgent,
     });
 
-    const payload: TokenPayload = { sub: user.id as string, role: user.role, ver: user.refreshTokenVersion };
+    const payload: TokenPayload = {
+      sub: user.id as string,
+      role: user.role,
+      ver: user.refreshTokenVersion,
+    };
     return {
       accessToken: signAccess(payload),
       refreshToken: signRefresh(payload),
@@ -79,12 +96,7 @@ export const AuthService = {
     };
   },
 
-  async login(data: {
-    email: string;
-    password: string;
-    ipAddress?: string;
-    userAgent?: string;
-  }) {
+  async login(data: { email: string; password: string; ipAddress?: string; userAgent?: string }) {
     const user = await AuthRepository.findByEmail(data.email);
     if (!user || user.status === 'suspended') throw new AppError(401, 'Invalid credentials');
 
@@ -101,7 +113,11 @@ export const AuthService = {
       userAgent: data.userAgent,
     });
 
-    const payload: TokenPayload = { sub: user.id as string, role: user.role, ver: user.refreshTokenVersion };
+    const payload: TokenPayload = {
+      sub: user.id as string,
+      role: user.role,
+      ver: user.refreshTokenVersion,
+    };
     return {
       accessToken: signAccess(payload),
       refreshToken: signRefresh(payload),
@@ -121,7 +137,10 @@ export const AuthService = {
     if (!user || user.status === 'suspended') throw new AppError(401, 'Invalid refresh token');
     if (user.refreshTokenVersion !== payload.ver) throw new AppError(401, 'Refresh token revoked');
 
-    const newPayload: TokenPayload = { sub: user.id as string, role: user.role, ver: user.refreshTokenVersion };
+    const updated = await AuthRepository.incrementRefreshTokenVersion(payload.sub);
+    const ver = updated?.refreshTokenVersion ?? user.refreshTokenVersion + 1;
+
+    const newPayload: TokenPayload = { sub: user.id as string, role: user.role, ver };
     return {
       accessToken: signAccess(newPayload),
       refreshToken: signRefresh(newPayload),

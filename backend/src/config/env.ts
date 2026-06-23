@@ -9,8 +9,12 @@ const envSchema = z.object({
   MONGODB_URI: z.string().min(1, { message: 'MONGODB_URI is required' }),
 
   // ── JWT ───────────────────────────────────────────────────────────────────
-  JWT_ACCESS_SECRET: z.string().min(1, { message: 'JWT_ACCESS_SECRET is required' }),
-  JWT_REFRESH_SECRET: z.string().min(1, { message: 'JWT_REFRESH_SECRET is required' }),
+  JWT_ACCESS_SECRET: z
+    .string()
+    .min(32, { message: 'JWT_ACCESS_SECRET must be at least 32 characters' }),
+  JWT_REFRESH_SECRET: z
+    .string()
+    .min(32, { message: 'JWT_REFRESH_SECRET must be at least 32 characters' }),
 
   // ── Razorpay ──────────────────────────────────────────────────────────────
   RAZORPAY_KEY_ID: z.string().min(1, { message: 'RAZORPAY_KEY_ID is required' }),
@@ -28,6 +32,9 @@ const envSchema = z.object({
   // ── Email / Resend ────────────────────────────────────────────────────────
   RESEND_API_KEY: z.string().min(1, { message: 'RESEND_API_KEY is required' }),
   EMAIL_FROM: z.string().min(1, { message: 'EMAIL_FROM is required' }),
+
+  // ── CORS ─────────────────────────────────────────────────────────────────
+  CORS_ORIGINS: z.string().optional(),
 
   // ── Sentry ───────────────────────────────────────────────────────────────
   SENTRY_DSN: z.string().optional(),

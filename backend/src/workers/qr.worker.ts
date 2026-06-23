@@ -9,12 +9,11 @@ export function startQrWorker() {
     queueName: QUEUE.QR,
     concurrency: 5,
     processor: async (job) => {
-      const { ticketId, ticketNumber, userId, eventId } = job.data;
+      const { ticketId, qrToken } = job.data;
 
       await job.updateProgress(10);
 
-      const payload = JSON.stringify({ ticketId, ticketNumber, userId, eventId });
-      const qrDataUrl = await QRCode.toDataURL(payload, { errorCorrectionLevel: 'H', width: 400 });
+      const qrDataUrl = await QRCode.toDataURL(qrToken, { errorCorrectionLevel: 'H', width: 400 });
 
       await job.updateProgress(70);
 

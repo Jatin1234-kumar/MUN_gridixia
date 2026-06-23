@@ -3,6 +3,7 @@ import { config } from '../config';
 import { QUEUE } from '../queues';
 import { renderEmailTemplate } from '../services/email/templates';
 import type { QueuedEmail } from '../services/email/types';
+import { encodeDisplayName } from '../utils/rfc2047';
 import { createWorker } from './factory';
 
 let resendClient: Resend | undefined;
@@ -26,7 +27,7 @@ export function startEmailWorker() {
 
       const result = await getResend().emails.send({
         from: config.email.from,
-        to: `${to.name} <${to.email}>`,
+        to: `${encodeDisplayName(to.name)} <${to.email}>`,
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,

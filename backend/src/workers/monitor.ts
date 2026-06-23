@@ -1,5 +1,11 @@
 import type { Worker } from 'bullmq';
-import { QUEUE } from '../queues';
+import {
+  QUEUE,
+  getQrQueue,
+  getCertificateQueue,
+  getEmailQueue,
+  getDeadLetterQueue,
+} from '../queues';
 import { createLogger } from '../utils/logger';
 
 const log = createLogger('monitor');
@@ -34,7 +40,11 @@ export function registerWorkers(workers: Worker[]): void {
 
 export async function getWorkerHealth(): Promise<WorkerHealth[]> {
   return trackedWorkers.map((w) => {
-    const m = (w as Worker & { metrics?: { processed: number; failed: number; active: number; startedAt: Date } }).metrics;
+    const m = (
+      w as Worker & {
+        metrics?: { processed: number; failed: number; active: number; startedAt: Date };
+      }
+    ).metrics;
     return {
       queueName: w.name,
       isRunning: w.isRunning(),
@@ -48,16 +58,22 @@ export async function getWorkerHealth(): Promise<WorkerHealth[]> {
   });
 }
 
+const QUEUE_GETTERS: Record<string, () => ReturnType<typeof getQrQueue>> = {
+  [QUEUE.QR]: getQrQueue,
+  [QUEUE.CERTIFICATE]: getCertificateQueue,
+  [QUEUE.EMAIL]: getEmailQueue,
+  [QUEUE.DEAD_LETTER]: getDeadLetterQueue,
+};
+
 export async function getQueueStats(): Promise<QueueHealth[]> {
   const queueNames = Object.values(QUEUE);
   const stats: QueueHealth[] = [];
 
   for (const name of queueNames) {
     try {
-      const { Queue } = await import('bullmq');
-      const queue = new Queue(name, {
-        connection: { url: process.env.REDIS_URL ?? 'redis://localhost:6379' },
-      });
+      const getter = QUEUE_GETTERS[name];
+      if (!getter) continue;
+      const queue = getter();
 
       const [waiting, active, completed, failed, delayed] = await Promise.all([
         queue.getWaitingCount(),
@@ -76,8 +92,6 @@ export async function getQueueStats(): Promise<QueueHealth[]> {
         delayed,
         paused: 0,
       });
-
-      await queue.close();
     } catch (err) {
       log.error(`failed to get stats for queue ${name}`, {
         meta: { error: (err as Error).message },

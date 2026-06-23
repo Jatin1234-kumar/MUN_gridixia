@@ -19,33 +19,36 @@ export const softDeleteSchemaFields = {
 
 export function applyCommonSchemaBehavior(schema: MongooseSchema): void {
   schema.set('timestamps', true);
-  schema.set('versionKey', false);
   schema.set('minimize', false);
   schema.set('toJSON', {
     virtuals: true,
     transform(_doc, ret) {
-      const transformed = ret as Record<string, unknown> & { _id?: { toString(): string }; __v?: unknown; id?: string };
+      const transformed = ret as Record<string, unknown> & {
+        _id?: { toString(): string };
+        id?: string;
+      };
 
       if (transformed._id != null) {
         transformed.id = transformed._id.toString();
         delete transformed._id;
       }
 
-      delete transformed.__v;
       return transformed;
     },
   });
   schema.set('toObject', {
     virtuals: true,
     transform(_doc, ret) {
-      const transformed = ret as Record<string, unknown> & { _id?: { toString(): string }; __v?: unknown; id?: string };
+      const transformed = ret as Record<string, unknown> & {
+        _id?: { toString(): string };
+        id?: string;
+      };
 
       if (transformed._id != null) {
         transformed.id = transformed._id.toString();
         delete transformed._id;
       }
 
-      delete transformed.__v;
       return transformed;
     },
   });
@@ -53,25 +56,37 @@ export function applyCommonSchemaBehavior(schema: MongooseSchema): void {
   schema.add(softDeleteSchemaFields as never);
   schema.index({ isDeleted: 1, deletedAt: 1 }, { name: 'soft_delete_lookup_idx' });
 
-  schema.pre(/^find/, function (this: { getOptions(): { includeDeleted?: boolean }; where(filter: object): void }, next) {
-    const options = this.getOptions();
+  schema.pre(
+    /^find/,
+    function (
+      this: { getOptions(): { includeDeleted?: boolean }; where(filter: object): void },
+      next,
+    ) {
+      const options = this.getOptions();
 
-    if (!options.includeDeleted) {
-      this.where({ isDeleted: false, deletedAt: null });
-    }
+      if (!options.includeDeleted) {
+        this.where({ isDeleted: false, deletedAt: null });
+      }
 
-    next();
-  });
+      next();
+    },
+  );
 
-  schema.pre('countDocuments', function (this: { getOptions(): { includeDeleted?: boolean }; where(filter: object): void }, next) {
-    const options = this.getOptions();
+  schema.pre(
+    'countDocuments',
+    function (
+      this: { getOptions(): { includeDeleted?: boolean }; where(filter: object): void },
+      next,
+    ) {
+      const options = this.getOptions();
 
-    if (!options.includeDeleted) {
-      this.where({ isDeleted: false, deletedAt: null });
-    }
+      if (!options.includeDeleted) {
+        this.where({ isDeleted: false, deletedAt: null });
+      }
 
-    next();
-  });
+      next();
+    },
+  );
 }
 
 export type DocumentOf<T> = HydratedDocument<T>;

@@ -23,6 +23,12 @@ export const committeeRepository = {
       .exec();
   },
 
+  findByAbbr(abbr: string) {
+    return CommitteeModel.findOne({ abbr: abbr.toUpperCase(), isDeleted: { $ne: true } })
+      .lean()
+      .exec();
+  },
+
   create(dto: CreateCommitteeDto) {
     return CommitteeModel.create({ ...dto, eventId: new Types.ObjectId(dto.eventId) });
   },

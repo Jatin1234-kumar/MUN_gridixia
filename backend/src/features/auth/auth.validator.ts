@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const allowedRegistrationRoles = ['participant', 'organizer', 'admin', 'delegate'] as const;
+const allowedRegistrationRoles = ['participant', 'delegate'] as const;
 
 export const registerSchema = z.object({
   body: z.object({

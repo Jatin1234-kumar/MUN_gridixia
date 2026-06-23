@@ -3,6 +3,31 @@ import { config } from '../config';
 
 let initialized = false;
 
+const PII_KEYS = [
+  'password',
+  'email',
+  'firstName',
+  'lastName',
+  'name',
+  'phone',
+  'token',
+  'secret',
+  'authorization',
+  'cookie',
+];
+
+function sanitizeObject(obj: Record<string, unknown>): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (PII_KEYS.some((k) => key.toLowerCase().includes(k))) {
+      sanitized[key] = '[Filtered]';
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  return sanitized;
+}
+
 export function initSentry(): void {
   if (initialized || !config.sentry.dsn) return;
 
@@ -19,6 +44,20 @@ export function initSentry(): void {
         delete event.request.headers['cookie'];
         delete event.request.headers['authorization'];
       }
+      if (event.request?.data && typeof event.request.data === 'object') {
+        event.request.data = sanitizeObject(event.request.data as Record<string, unknown>);
+      }
+      if (event.request?.query_string && typeof event.request.query_string === 'string') {
+        event.request.query_string = '[Filtered]';
+      }
+      if (event.extra && typeof event.extra === 'object') {
+        event.extra = sanitizeObject(event.extra as Record<string, unknown>);
+      }
+      const statusCodeTag = event.tags?.status_code;
+      if (statusCodeTag) {
+        const code = Number(statusCodeTag);
+        if (code >= 400 && code < 500) return null;
+      }
       return event;
     },
     integrations: [
@@ -31,12 +70,15 @@ export function initSentry(): void {
   initialized = true;
 }
 
-export function captureError(error: Error, context?: {
-  level?: Sentry.SeverityLevel;
-  tags?: Record<string, string>;
-  extra?: Record<string, unknown>;
-  fingerprint?: string[];
-}): void {
+export function captureError(
+  error: Error,
+  context?: {
+    level?: Sentry.SeverityLevel;
+    tags?: Record<string, string>;
+    extra?: Record<string, unknown>;
+    fingerprint?: string[];
+  },
+): void {
   if (!initialized) return;
 
   Sentry.withScope((scope) => {

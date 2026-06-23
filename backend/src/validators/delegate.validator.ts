@@ -1,22 +1,24 @@
 import { z } from 'zod';
 
+const mongoId = z.string().regex(/^[a-f\d]{24}$/i, 'Invalid ObjectId');
+
 export const createDelegateSchema = z.object({
   body: z.object({
-    name:      z.string().min(2).max(200),
-    country:   z.string().min(2).max(100),
+    name: z.string().min(2).max(200),
+    country: z.string().min(2).max(100),
     committee: z.string().min(1).max(50),
   }),
 });
 
 export const updateDelegateSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
-  body:   createDelegateSchema.shape.body.partial().extend({
+  params: z.object({ id: mongoId }),
+  body: createDelegateSchema.shape.body.partial().extend({
     status: z.enum(['confirmed', 'pending', 'waitlisted']).optional(),
   }),
 });
 
 export const getDelegateSchema = z.object({
-  params: z.object({ id: z.string().uuid() }),
+  params: z.object({ id: mongoId }),
 });
 
 export type CreateDelegateDto = z.infer<typeof createDelegateSchema>['body'];

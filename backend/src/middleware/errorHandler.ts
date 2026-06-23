@@ -6,20 +6,17 @@ import { createLogger, trackApiFailure } from '../utils/logger';
 
 const log = createLogger('errorHandler');
 
-export function errorHandler(
-  err: Error,
-  req: Request,
-  res: Response,
-  _next: NextFunction,
-): void {
+export function errorHandler(err: Error, req: Request, res: Response, _next: NextFunction): void {
   if (err instanceof AppError) {
-    Sentry.withScope((scope) => {
-      scope.setTag('error_type', 'app_error');
-      scope.setTag('status_code', String(err.statusCode));
-      scope.setExtra('url', req.originalUrl);
-      scope.setExtra('method', req.method);
-      scope.captureException(err);
-    });
+    if (err.statusCode >= 500) {
+      Sentry.withScope((scope) => {
+        scope.setTag('error_type', 'app_error');
+        scope.setTag('status_code', String(err.statusCode));
+        scope.setExtra('url', req.originalUrl);
+        scope.setExtra('method', req.method);
+        scope.captureException(err);
+      });
+    }
 
     res.status(err.statusCode).json({ message: err.message });
     return;

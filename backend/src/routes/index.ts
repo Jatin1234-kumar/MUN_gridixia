@@ -17,6 +17,7 @@ import {
 } from '../controllers/monitoring.controller';
 import { getDashboardStats } from '../controllers/dashboard.controller';
 import { asyncHandler } from '../utils/asyncHandler';
+import { authenticate, authorize } from '../middleware/authenticate';
 
 const router = Router();
 
@@ -30,6 +31,8 @@ router.get('/health/queues', getQueueStats_);
 
 router.get(
   '/dlq',
+  authenticate,
+  authorize(['admin']),
   asyncHandler(async (_req, res) => {
     const start = Number(_req.query.start) || 0;
     const end = Number(_req.query.end) || 50;
@@ -40,6 +43,8 @@ router.get(
 
 router.post(
   '/dlq/:jobId/replay',
+  authenticate,
+  authorize(['admin']),
   asyncHandler(async (req, res) => {
     const result = await replayDlqJob(req.params.jobId);
     res.json(result);
@@ -48,6 +53,8 @@ router.post(
 
 router.post(
   '/dlq/replay-all',
+  authenticate,
+  authorize(['admin']),
   asyncHandler(async (_req, res) => {
     const results = await replayAllDlqJobs();
     res.json({ results, total: results.length });
@@ -56,15 +63,17 @@ router.post(
 
 router.delete(
   '/dlq',
+  authenticate,
+  authorize(['admin']),
   asyncHandler(async (_req, res) => {
     const result = await clearDlq();
     res.json(result);
   }),
 );
 
-router.get('/monitoring/health', getSystemHealth);
-router.get('/monitoring/sentry', getSentryHealth);
-router.get('/monitoring/errors', getErrorStats);
+router.get('/monitoring/health', authenticate, authorize(['admin']), getSystemHealth);
+router.get('/monitoring/sentry', authenticate, authorize(['admin']), getSentryHealth);
+router.get('/monitoring/errors', authenticate, authorize(['admin']), getErrorStats);
 
 router.use('/auth', authRoutes);
 router.use('/events', eventRoutes);

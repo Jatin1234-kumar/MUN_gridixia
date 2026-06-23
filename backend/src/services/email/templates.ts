@@ -18,6 +18,14 @@ function escapeHtml(value: string) {
     .replaceAll("'", '&#39;');
 }
 
+function safeUrl(url: string): string {
+  const trimmed = url.trim().toLowerCase();
+  if (trimmed.startsWith('javascript:') || trimmed.startsWith('data:')) {
+    return '';
+  }
+  return url;
+}
+
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -53,11 +61,13 @@ function createShell(options: {
   footerNote: string;
 }) {
   const detailsMarkup = renderDetailList(options.details);
-  const ctaMarkup = options.ctaLabel && options.ctaUrl
-    ? `
-      <a href="${escapeHtml(options.ctaUrl)}" style="display:inline-block;margin-top:28px;background:${options.accent};color:#07111f;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">${escapeHtml(options.ctaLabel)}</a>
+  const ctaUrl = options.ctaUrl ? safeUrl(options.ctaUrl) : undefined;
+  const ctaMarkup =
+    options.ctaLabel && ctaUrl
+      ? `
+      <a href="${escapeHtml(ctaUrl)}" style="display:inline-block;margin-top:28px;background:${options.accent};color:#07111f;text-decoration:none;font-weight:700;border-radius:14px;padding:14px 22px;">${escapeHtml(options.ctaLabel)}</a>
     `
-    : '';
+      : '';
 
   return {
     html: `
@@ -85,14 +95,17 @@ function createShell(options: {
       options.intro,
       '',
       ...options.details.map((detail) => `${detail.label}: ${detail.value}`),
-      options.ctaLabel && options.ctaUrl ? `${options.ctaLabel}: ${options.ctaUrl}` : '',
+      options.ctaLabel && ctaUrl ? `${options.ctaLabel}: ${ctaUrl}` : '',
       '',
       options.footerNote,
     ]),
   } satisfies Pick<RenderedEmail, 'html' | 'text'>;
 }
 
-export function renderEmailTemplate<T extends EmailTemplateName>(template: T, data: EmailPayloadMap[T]): RenderedEmail {
+export function renderEmailTemplate<T extends EmailTemplateName>(
+  template: T,
+  data: EmailPayloadMap[T],
+): RenderedEmail {
   switch (template) {
     case 'registration-success':
       return renderRegistrationSuccessEmail(data as RegistrationSuccessEmailData);
@@ -119,12 +132,18 @@ export function renderRegistrationSuccessEmail(data: RegistrationSuccessEmailDat
       details: [
         { label: 'Event', value: data.eventName },
         { label: 'Registration ID', value: data.registrationId },
-        { label: 'Committee Preference', value: data.committeeName ? `${data.committeeAbbr ?? ''} ${data.committeeName}`.trim() : 'Pending review' },
+        {
+          label: 'Committee Preference',
+          value: data.committeeName
+            ? `${data.committeeAbbr ?? ''} ${data.committeeName}`.trim()
+            : 'Pending review',
+        },
       ],
       ctaLabel: 'Open Dashboard',
       ctaUrl: data.dashboardUrl,
       accent: '#d4af37',
-      footerNote: 'Keep this email for your records. The delegate dashboard will reflect your next milestone automatically.',
+      footerNote:
+        'Keep this email for your records. The delegate dashboard will reflect your next milestone automatically.',
     }),
   };
 }
@@ -145,7 +164,8 @@ export function renderPaymentSuccessEmail(data: PaymentSuccessEmailData): Render
       ctaLabel: 'View Delegate Pass',
       ctaUrl: data.dashboardUrl,
       accent: '#88c19f',
-      footerNote: 'If you need to review the payment journey, return to the payment workspace for your session details.',
+      footerNote:
+        'If you need to review the payment journey, return to the payment workspace for your session details.',
     }),
   };
 }
@@ -166,7 +186,8 @@ export function renderCommitteeAllocationEmail(data: CommitteeAllocationEmailDat
       ctaLabel: 'Review Allocation',
       ctaUrl: data.dashboardUrl,
       accent: '#4f8ccf',
-      footerNote: 'Please review your agenda and country portfolio before the first session begins.',
+      footerNote:
+        'Please review your agenda and country portfolio before the first session begins.',
     }),
   };
 }
@@ -186,7 +207,8 @@ export function renderTicketIssuedEmail(data: TicketIssuedEmailData): RenderedEm
       ctaLabel: 'Open Delegate Pass',
       ctaUrl: data.delegatePassUrl,
       accent: '#d4af37',
-      footerNote: 'Bring your pass to the venue or open it on mobile for a faster check-in experience.',
+      footerNote:
+        'Bring your pass to the venue or open it on mobile for a faster check-in experience.',
     }),
   };
 }

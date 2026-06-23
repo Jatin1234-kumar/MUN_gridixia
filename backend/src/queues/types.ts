@@ -3,6 +3,7 @@
 export interface GenerateQrJobData {
   ticketId: string;
   ticketNumber: string;
+  qrToken: string;
   userId: string;
   eventId: string;
 }

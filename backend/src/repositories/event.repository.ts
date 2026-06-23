@@ -1,39 +1,54 @@
-import { Event } from '../types';
-import { CreateEventDto, UpdateEventDto } from '../validators/event.validator';
-
-const store = new Map<string, Event>();
+import { Types } from 'mongoose';
+import { EventModel } from '../models/Event';
+import type { CreateEventDto, UpdateEventDto } from '../validators/event.validator';
 
 export const eventRepository = {
-  findAll(): Event[] {
-    return Array.from(store.values());
+  findAll() {
+    return EventModel.find({ isDeleted: { $ne: true } })
+      .sort({ startAt: -1 })
+      .lean()
+      .exec();
   },
 
-  findById(id: string): Event | undefined {
-    return store.get(id);
+  findById(id: string) {
+    return EventModel.findById(id).lean().exec();
   },
 
-  create(dto: CreateEventDto): Event {
-    const event: Event = {
+  create(dto: CreateEventDto) {
+    return EventModel.create({
       ...dto,
-      id:            crypto.randomUUID(),
-      status:        dto.status ?? 'pending',
-      delegateCount: 0,
-      createdAt:     new Date(),
-      updatedAt:     new Date(),
-    };
-    store.set(event.id, event);
-    return event;
+      startAt: new Date(dto.startAt),
+      endAt: new Date(dto.endAt),
+      registrationOpensAt: dto.registrationOpensAt ? new Date(dto.registrationOpensAt) : null,
+      registrationClosesAt: dto.registrationClosesAt ? new Date(dto.registrationClosesAt) : null,
+    });
   },
 
-  update(id: string, dto: UpdateEventDto): Event | undefined {
-    const existing = store.get(id);
-    if (!existing) return undefined;
-    const updated: Event = { ...existing, ...dto, updatedAt: new Date() };
-    store.set(id, updated);
-    return updated;
+  update(id: string, dto: UpdateEventDto) {
+    const update: Record<string, unknown> = { ...dto };
+    if (dto.startAt) update.startAt = new Date(dto.startAt);
+    if (dto.endAt) update.endAt = new Date(dto.endAt);
+    if (dto.registrationOpensAt) update.registrationOpensAt = new Date(dto.registrationOpensAt);
+    if (dto.registrationClosesAt) update.registrationClosesAt = new Date(dto.registrationClosesAt);
+
+    return EventModel.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true })
+      .lean()
+      .exec();
   },
 
-  delete(id: string): boolean {
-    return store.delete(id);
+  softDelete(id: string, deletedBy?: string) {
+    return EventModel.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: deletedBy ? new Types.ObjectId(deletedBy) : null,
+        },
+      },
+      { new: true },
+    )
+      .lean()
+      .exec();
   },
 };
