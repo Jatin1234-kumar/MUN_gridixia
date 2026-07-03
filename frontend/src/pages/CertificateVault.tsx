@@ -31,18 +31,20 @@ import {
   createDefaultCertificates,
 } from '@/lib/certificate-utils';
 import type { VaultCertificate, CertificateVaultRecord } from '@/lib/certificate-utils';
+import type { DelegateApplicationDraft, PaymentSession } from '@/types';
 import { jsPDF } from 'jspdf';
+
 
 const iconMap: Record<string, ComponentType<{ className?: string }>> = {
   Unlock,
   BadgeCheck,
   ShieldCheck,
 };
-import type { DelegateApplicationDraft, PaymentSession } from '@/types';
 
 const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
 const paymentSessionKey = 'mun-gridixia:payment-session:v1';
 const certificateVaultKey = 'mun-gridixia:certificate-vault:v1';
+const checkInLedgerKey = 'mun-gridixia:checkin-ledger:v1';
 
 function useVaultContext() {
   const [draft, setDraft] = useState<Partial<DelegateApplicationDraft> | undefined>(undefined);
@@ -230,7 +232,7 @@ function CertificatePreview({
   const verificationUrl = `${verificationBase}/verify/pending/${certificate.id}`;
 
   return (
-    <div className="bg-[#f5efe2] p-4 text-[#07111f] sm:p-5">
+    <div className="min-w-0 bg-[#f5efe2] p-4 text-[#07111f] sm:p-5">
       <div
         className={cn(
           'overflow-hidden rounded-[30px] border p-4 shadow-[0_24px_60px_rgba(7,17,31,0.16)]',
@@ -259,8 +261,8 @@ function CertificatePreview({
 
           <Separator className="my-5 bg-slate-200" />
 
-          <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-            <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,320px)]">
+            <div className="min-w-0 space-y-4">
               <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4">
                 <p className="text-[10px] uppercase tracking-[0.28em] text-slate-500">Delegate</p>
                 <p className="mt-2 text-3xl font-semibold text-slate-900">{delegateName}</p>
@@ -311,7 +313,7 @@ function CertificatePreview({
               </div>
             </div>
 
-            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-inner">
+            <div className="min-w-0 rounded-[28px] border border-slate-200 bg-white p-4 shadow-inner">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.28em] text-slate-500">
@@ -424,12 +426,12 @@ export default function CertificateVault() {
     () => readJson<CertificateVaultRecord>(certificateVaultKey) ?? {},
   );
 
-  const delegateName = session?.applicantName || draft?.personal.fullName || 'Delegate Pending';
+  const delegateName = session?.applicantName || draft?.personal?.fullName || 'Delegate Pending';
   const committee =
     session?.committeeName ||
-    draft?.committeePreference.preferredCommitteeName ||
+    draft?.committeePreference?.preferredCommitteeName ||
     'Unassigned Committee';
-  const country = draft?.countryPreference.firstChoiceCountry || 'Pending Country';
+  const country = draft?.countryPreference?.firstChoiceCountry || 'Pending Country';
 
   const checkInTicket = session ? `DP-${session.orderId.slice(-8).toUpperCase()}` : undefined;
   const checkInRecord = checkInTicket
@@ -443,6 +445,24 @@ export default function CertificateVault() {
   );
   const selectedCertificate =
     certificates.find((certificate) => certificate.id === selectedId) ?? certificates[0];
+
+  if (!selectedCertificate) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Certificate Vault" subtitle="Professional achievement showcase" />
+        <Card className="glass-card border-white/[0.08]">
+          <CardContent className="flex min-h-[280px] items-center justify-center p-6">
+            <div className="text-center">
+              <p className="text-sm font-medium text-foreground">No certificates available</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The vault could not build any certificates for the current session.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   useEffect(() => {
     setSelectedId((current) =>
@@ -612,7 +632,7 @@ export default function CertificateVault() {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-[1.12fr_0.88fr]">
+      <div className="space-y-4">
         <Card className="overflow-hidden border-white/[0.08] bg-[#08111d] text-white shadow-2xl shadow-black/35">
           <CardHeader className="border-b border-white/10 bg-white/[0.02] px-5 py-5 sm:px-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -636,8 +656,8 @@ export default function CertificateVault() {
             </div>
           </CardHeader>
 
-          <CardContent className="grid gap-0 p-0 max-lg:grid-cols-1 lg:grid-cols-[0.9fr_1.1fr]">
-            <div className="border-b border-white/10 bg-white/[0.02] p-4 lg:border-b-0 lg:border-r lg:border-white/10">
+          <CardContent className="grid gap-0 p-0 max-lg:grid-cols-1 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+            <div className="min-w-0 border-b border-white/10 bg-white/[0.02] p-4 lg:border-b-0 lg:border-r lg:border-white/10">
               <CertificateGallery
                 certificates={certificates}
                 selectedId={selectedId}
@@ -659,7 +679,7 @@ export default function CertificateVault() {
           </CardContent>
         </Card>
 
-        <Card className="glass-card border-white/[0.08]">
+        <Card className="glass-card min-w-0 border-white/[0.08]">
           <CardHeader className="space-y-3 border-b border-white/[0.06] bg-white/[0.015]">
             <div className="flex items-center gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gold-500/20 bg-gold-500/10 text-gold-400">
@@ -673,7 +693,7 @@ export default function CertificateVault() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-4">
+          <CardContent className="grid gap-4 p-5 sm:grid-cols-2 xl:grid-cols-2">
             <AchievementCard
               title="Delegate Readiness"
               description="Registration and payment status"

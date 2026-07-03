@@ -30,10 +30,13 @@ export default function AppRoutes() {
       <Routes>
         <Route element={<LandingLayout />}>
           <Route path="/" element={<Landing />} />
+          <Route path="/landing" element={<Landing />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/signup" element={<Register />} />
         </Route>
 
         <Route path="/login" element={<Login />} />
+        <Route path="/signin" element={<Login />} />
 
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>

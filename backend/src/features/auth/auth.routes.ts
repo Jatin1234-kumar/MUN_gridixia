@@ -23,9 +23,18 @@ const strictLimiter = rateLimit({
   message: { message: 'Too many login attempts, please try again later' },
 });
 
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipFailedRequests: true,
+  message: { message: 'Too many session refresh attempts, please try again later' },
+});
+
 router.post('/register', authLimiter, validate(registerSchema), register);
 router.post('/login', strictLimiter, validate(loginSchema), login);
-router.post('/refresh', authLimiter, refresh);
+router.post('/refresh', refreshLimiter, refresh);
 router.post('/logout', authenticate, logout);
 
 export default router;

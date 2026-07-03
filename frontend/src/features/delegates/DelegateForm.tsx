@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type * as React from 'react';
+import * as React from "react";
 import type { ComponentType, ReactNode } from 'react';
 import { useForm, useWatch, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
@@ -21,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   UserRound,
+  type LucideIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -72,7 +73,7 @@ const applicationSchema = z.object({
     marketingOptIn: z.boolean().optional().default(false),
   }),
   payment: z.object({
-    paymentMethod: z.enum(['card', 'upi', 'bank_transfer']),
+    paymentMethod: z.enum(['card', 'upi', 'netbanking']),
     billingName: z.string().min(2, 'Billing name is required').max(120),
     couponCode: z.string().optional().default(''),
   }),
@@ -81,7 +82,7 @@ const applicationSchema = z.object({
 type ApplicationFormValues = z.infer<typeof applicationSchema>;
 type StepKey = 'personal' | 'academic' | 'experience' | 'committeePreference' | 'countryPreference' | 'review' | 'payment';
 
-const stepLabels: { key: StepKey; title: string; icon: ComponentType<{ className?: string }> }[] = [
+const stepLabels: { key: StepKey; title: string; icon: LucideIcon }[] = [
   { key: 'personal', title: 'Personal Information', icon: UserRound },
   { key: 'academic', title: 'Academic Information', icon: GraduationCap },
   { key: 'experience', title: 'MUN Experience', icon: NotebookText },
@@ -179,16 +180,15 @@ function SectionShell({
   );
 }
 
-function SelectField({
-  label,
-  error,
-  children,
-  ...props
-}: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string; children: ReactNode }) {
+const SelectField = React.forwardRef<
+  HTMLSelectElement,
+  React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; error?: string; children: ReactNode }
+>(({ label, error, children, ...props }, ref) => {
   return (
     <div className="space-y-1.5">
       <Label htmlFor={props.id}>{label}</Label>
       <select
+        ref={ref}
         {...props}
         className={cn(
           'flex h-9 w-full rounded-lg border border-white/[0.08] bg-navy-800/60 px-3 text-sm text-foreground shadow-sm',
@@ -202,7 +202,9 @@ function SelectField({
       <FieldError message={error} />
     </div>
   );
-}
+});
+
+SelectField.displayName = 'SelectField';
 
 function TextareaField({
   label,

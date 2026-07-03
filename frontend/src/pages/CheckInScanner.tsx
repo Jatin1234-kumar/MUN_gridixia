@@ -246,12 +246,12 @@ export default function CheckInScanner() {
   const [errorMessage, setErrorMessage] = useState('');
   const [record, setRecord] = useState<CheckInRecord | undefined>(undefined);
 
-  const delegateName = session?.applicantName || draft?.personal.fullName || 'Delegate Pending';
+  const delegateName = session?.applicantName || draft?.personal?.fullName || 'Delegate Pending';
   const committeeName =
     session?.committeeName ||
-    draft?.committeePreference.preferredCommitteeName ||
+    draft?.committeePreference?.preferredCommitteeName ||
     'Awaiting committee';
-  const country = draft?.countryPreference.firstChoiceCountry || 'Awaiting country';
+  const country = draft?.countryPreference?.firstChoiceCountry || 'Awaiting country';
   const ticket = ticketNumberFromSession(session);
   const canCheckIn = session?.status === 'success';
 
@@ -325,7 +325,7 @@ export default function CheckInScanner() {
 
             const matched =
               expectedTokens.has(rawValue.toLowerCase()) ||
-              expectedTokens.some((token) => rawValue.toLowerCase().includes(token));
+              [...expectedTokens].some((token) => rawValue.toLowerCase().includes(token));
 
             if (!matched) {
               scanLockRef.current = true;

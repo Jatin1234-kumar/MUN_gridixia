@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Globe2, Mail, Lock, User, Eye, EyeOff, AlertCircle, ArrowLeft, X } from 'lucide-react';
+import { useAuth } from '@/features/auth/AuthContext';
+import { getApiErrorMessage } from '@/lib/api';
 import { useSeo } from '@/lib/seo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,9 +19,11 @@ const PAGE_SEO = {
 
 export default function Register() {
   useSeo(PAGE_SEO.register);
+  const { register, isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  const [fullName, setFullName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -32,30 +36,33 @@ export default function Register() {
     return () => clearTimeout(id);
   }, [error]);
 
+  if (isLoading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/10 border-t-gold-500" />
+          <p className="animate-pulse font-mono text-xs text-muted-foreground">
+            AUTHENTICATING...
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isAuthenticated) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setIsSubmitting(true);
 
     try {
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL ?? 'http://localhost:3001'}/api/auth/register`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fullName, email, password }),
-        },
-      );
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.message ?? 'Registration failed. Please try again.');
-      }
-
-      navigate('/login', { state: { registered: true } });
+      await register({ firstName, lastName, email, password });
+      navigate('/dashboard', { replace: true });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Registration failed. Please try again.';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Registration failed. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }
@@ -104,6 +111,7 @@ export default function Register() {
                 type="button"
                 onClick={() => setError('')}
                 className="shrink-0 text-red-400/60 hover:text-red-400 transition-colors"
+                aria-label="Dismiss error"
               >
                 <X size={14} />
               </button>
@@ -111,28 +119,55 @@ export default function Register() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label
-                htmlFor="fullName"
-                className="text-xs font-mono uppercase tracking-widest text-muted-foreground"
-              >
-                Full Name
-              </Label>
-              <div className="relative">
-                <User
-                  size={14}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                />
-                <Input
-                  id="fullName"
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Enter your full name"
-                  required
-                  autoComplete="name"
-                  className="h-10 pl-9 text-sm"
-                />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="firstName"
+                  className="text-xs font-mono uppercase tracking-widest text-muted-foreground"
+                >
+                  First Name
+                </Label>
+                <div className="relative">
+                  <User
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    id="firstName"
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="Jane"
+                    required
+                    autoComplete="given-name"
+                    className="h-10 pl-9 text-sm"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="lastName"
+                  className="text-xs font-mono uppercase tracking-widest text-muted-foreground"
+                >
+                  Last Name
+                </Label>
+                <div className="relative">
+                  <User
+                    size={14}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  />
+                  <Input
+                    id="lastName"
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Smith"
+                    required
+                    autoComplete="family-name"
+                    className="h-10 pl-9 text-sm"
+                  />
+                </div>
               </div>
             </div>
 
@@ -196,7 +231,7 @@ export default function Register() {
 
             <Button
               type="submit"
-              disabled={isSubmitting || !fullName || !email || !password}
+              disabled={isSubmitting || !firstName || !lastName || !email || !password}
               className={cn(
                 'w-full h-10 text-sm font-medium',
                 'bg-gold-500 text-navy-950 hover:bg-gold-400',

@@ -25,6 +25,7 @@ app.use(
     credentials: true,
   }),
 );
+app.use('/api/payments/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 app.use(cookieParser());
 app.use(morgan(config.isDev ? 'dev' : 'combined'));

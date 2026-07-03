@@ -28,7 +28,7 @@ export const createEventSchema = z.object({
 
 export const updateEventSchema = z.object({
   params: z.object({ id: mongoId }),
-  body: createEventSchema.shape.body.partial().refine(
+  body: createEventSchema.shape.body.innerType().partial().refine(
     (b) => {
       if (b.startAt && b.endAt) {
         return new Date(b.endAt).getTime() > new Date(b.startAt).getTime();

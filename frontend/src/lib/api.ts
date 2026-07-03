@@ -11,6 +11,14 @@ export function getAccessToken(): string | null {
   return accessToken;
 }
 
+export function getApiErrorMessage(err: unknown, fallback = 'Something went wrong. Please try again.'): string {
+  if (axios.isAxiosError<{ message?: string }>(err)) {
+    return err.response?.data?.message ?? err.message ?? fallback;
+  }
+
+  return err instanceof Error ? err.message : fallback;
+}
+
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL ?? '/api',
   withCredentials: true,
@@ -34,8 +42,10 @@ api.interceptors.response.use(
   (res) => res,
   async (err) => {
     const originalRequest = err.config;
+    const requestUrl = String(originalRequest?.url ?? '');
+    const isAuthRequest = /\/auth\/(login|register|refresh|logout)$/.test(requestUrl);
 
-    if (err.response?.status === 401 && !originalRequest._retry) {
+    if (err.response?.status === 401 && originalRequest && !originalRequest._retry && !isAuthRequest) {
       originalRequest._retry = true;
 
       try {

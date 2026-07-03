@@ -210,7 +210,7 @@ export default function Dashboard() {
   }, []);
 
   const selectedCommittee = useMemo(() => {
-    const committeeId = draft?.committeePreference.preferredCommitteeId ?? session?.committeeId;
+    const committeeId = draft?.committeePreference?.preferredCommitteeId ?? session?.committeeId;
     return committees.find((committee: Committee) => committee.id === committeeId);
   }, [committees, draft, session]);
 
@@ -219,7 +219,7 @@ export default function Dashboard() {
     return events.find((event: Event) => event.id === eventId);
   }, [events, selectedCommittee, session]);
 
-  const registrationStatus: DashboardStatus = draft?.personal.fullName ? 'complete' : 'in-progress';
+  const registrationStatus: DashboardStatus = draft?.personal?.fullName ? 'complete' : 'in-progress';
   const paymentStatus: DashboardStatus =
     session?.status === 'success'
       ? 'complete'
@@ -236,7 +236,7 @@ export default function Dashboard() {
   const timeline = [
     {
       title: 'Registered',
-      subtitle: draft?.personal.fullName
+      subtitle: draft?.personal?.fullName
         ? 'Application draft completed'
         : 'Waiting for application completion',
       status: registrationStatus,
@@ -267,8 +267,8 @@ export default function Dashboard() {
 
   const committeeAllocation = selectedCommittee
     ? `${selectedCommittee.abbr}`
-    : draft?.committeePreference.preferredCommitteeName || 'Unassigned';
-  const countryPortfolio = draft?.countryPreference.firstChoiceCountry || 'No country selected';
+    : draft?.committeePreference?.preferredCommitteeName || 'Unassigned';
+  const countryPortfolio = draft?.countryPreference?.firstChoiceCountry || 'No country selected';
   const eventName = selectedEvent?.name || 'No active event';
   const eventDate = selectedEvent ? formatDate(selectedEvent.date) : 'TBD';
   const receipt = session?.receiptId || 'Pending';
@@ -282,8 +282,8 @@ export default function Dashboard() {
   const modules = [
     {
       title: 'Registration Status',
-      value: draft?.personal.fullName ? 'Registered' : 'Draft Saved',
-      subtitle: draft?.personal.email || 'Resume your application',
+      value: draft?.personal?.fullName ? 'Registered' : 'Draft Saved',
+      subtitle: draft?.personal?.email || 'Resume your application',
       status: registrationStatus,
       icon: Users,
     },
@@ -326,7 +326,7 @@ export default function Dashboard() {
       icon: Landmark,
       content: selectedCommittee
         ? `${selectedCommittee.abbr} • ${selectedCommittee.name}`
-        : draft?.committeePreference.preferredCommitteeName ||
+        : draft?.committeePreference?.preferredCommitteeName ||
           'Choose a committee in the application flow.',
     },
     {

@@ -76,18 +76,22 @@ export interface DelegateApplicationDraft {
     marketingOptIn?: boolean;
   };
   payment: {
-    paymentMethod: 'card' | 'upi' | 'bank_transfer';
+    paymentMethod: 'card' | 'upi' | 'netbanking';
     billingName: string;
     couponCode?: string;
   };
 }
 
 export type PaymentStatus = 'pending' | 'processing' | 'success' | 'failed';
-export type PaymentMethod = 'card' | 'upi' | 'bank_transfer';
+export type PaymentMethod = 'card' | 'upi' | 'netbanking';
 
 export interface PaymentSession {
   orderId: string;
   receiptId: string;
+  registrationId?: string;
+  paymentId?: string;
+  keyId?: string;
+  currency?: string;
   status: PaymentStatus;
   attempts: number;
   applicantName: string;

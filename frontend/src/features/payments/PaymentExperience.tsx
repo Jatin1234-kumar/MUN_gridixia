@@ -34,6 +34,7 @@ import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
+import api, { getApiErrorMessage } from '@/lib/api';
 import { readJson, writeJson } from '@/lib/storage';
 import { useCommittees } from '@/hooks/useCommittees';
 import { useEvents } from '@/hooks/useEvents';
@@ -48,12 +49,13 @@ import type {
 const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
 const paymentDraftKey = 'mun-gridixia:payment-draft:v1';
 const paymentSessionKey = 'mun-gridixia:payment-session:v1';
+const razorpayCheckoutSrc = 'https://checkout.razorpay.com/v1/checkout.js';
 
 const paymentSchema = z.object({
   applicantName: z.string().min(2, 'Applicant name is required').max(120),
   email: z.string().email('Enter a valid email address'),
   committeeId: z.string().min(1, 'Select a committee'),
-  paymentMethod: z.enum(['card', 'upi', 'bank_transfer']),
+  paymentMethod: z.enum(['card', 'upi', 'netbanking']),
   billingName: z.string().min(2, 'Billing name is required').max(120),
   couponCode: z.string().optional().default(''),
   consent: z.boolean().refine(Boolean, 'You must confirm the payment details are correct'),
@@ -62,6 +64,45 @@ const paymentSchema = z.object({
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 type PaymentFlowStatus = PaymentStatus;
+
+interface CreatePaymentOrderResponse {
+  keyId: string;
+  orderId: string;
+  receiptId: string;
+  registrationId: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  feeBreakdown: {
+    baseFee?: number;
+    committeeFee?: number;
+    kitFee?: number;
+    serviceFee?: number;
+    discount?: number;
+    tax?: number;
+    total?: number;
+  };
+  committee: {
+    id: string;
+    name: string;
+    abbr: string;
+  };
+  event: {
+    id: string;
+    name: string;
+    date: string;
+  };
+}
+
+interface VerifyPaymentResponse {
+  orderId: string;
+  paymentId?: string;
+  receiptId: string;
+  amount: number;
+  currency: string;
+  status: PaymentStatus;
+  failureReason?: string;
+}
 
 const statusMeta: Record<
   PaymentFlowStatus,
@@ -158,12 +199,74 @@ function computeFees(committee?: Committee, event?: Event, couponCode = '') {
   };
 }
 
-function generateOrderId() {
-  return `ord_${crypto.randomUUID().slice(0, 12)}`;
+function loadRazorpayCheckout(): Promise<void> {
+  if (window.Razorpay) return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector<HTMLScriptElement>(
+      `script[src="${razorpayCheckoutSrc}"]`,
+    );
+
+    if (existing) {
+      existing.addEventListener('load', () => resolve(), { once: true });
+      existing.addEventListener('error', () => reject(new Error('Unable to load Razorpay Checkout')), {
+        once: true,
+      });
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = razorpayCheckoutSrc;
+    script.async = true;
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error('Unable to load Razorpay Checkout'));
+    document.body.appendChild(script);
+  });
 }
 
-function generateReceiptId() {
-  return `rcpt_${crypto.randomUUID().slice(0, 10)}`;
+function createSessionFromOrder(
+  order: CreatePaymentOrderResponse,
+  values: PaymentFormValues,
+  attempts: number,
+  status: PaymentStatus,
+): PaymentSession {
+  return {
+    orderId: order.orderId,
+    receiptId: order.receiptId,
+    registrationId: order.registrationId,
+    keyId: order.keyId,
+    currency: order.currency,
+    status,
+    attempts,
+    applicantName: values.applicantName,
+    email: values.email,
+    committeeId: order.committee.id,
+    committeeName: order.committee.name,
+    committeeAbbr: order.committee.abbr,
+    eventId: order.event.id,
+    eventName: order.event.name,
+    eventDate: order.event.date,
+    paymentMethod: values.paymentMethod,
+    amount: order.amount,
+    baseFee: order.feeBreakdown.baseFee ?? 0,
+    committeeFee: order.feeBreakdown.committeeFee ?? 0,
+    serviceFee: order.feeBreakdown.serviceFee ?? 0,
+    tax: order.feeBreakdown.tax ?? 0,
+    discount: order.feeBreakdown.discount ?? 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function isPaymentSession(value: unknown): value is PaymentSession {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'orderId' in value &&
+      'receiptId' in value &&
+      'status' in value &&
+      'attempts' in value,
+  );
 }
 
 function PaymentStatusCard({
@@ -383,98 +486,117 @@ export function PaymentExperience() {
   const paymentMutation = useMutation({
     mutationFn: async (values: PaymentFormValues) => {
       const currentSession = readJson<PaymentSession>(paymentSessionKey);
-
-      if (
-        currentSession &&
-        (currentSession.status === 'pending' || currentSession.status === 'processing')
-      ) {
-        throw new Error(
-          'An active order already exists. Resume the saved session instead of creating a duplicate order.',
-        );
-      }
-
-      const committee = committees.find((item) => item.id === values.committeeId);
-      const event = events.find((item) => item.id === committee?.eventId);
-      const computedFees = computeFees(committee, event, values.couponCode ?? '');
-      const orderId = currentSession?.orderId ?? generateOrderId();
       const attempts = (currentSession?.attempts ?? 0) + 1;
-      const processingSession: PaymentSession = {
-        orderId,
-        receiptId: generateReceiptId(),
-        status: 'processing',
-        attempts,
+
+      const { data } = await api.post<{ data: CreatePaymentOrderResponse }>('/payments/orders', {
+        committeeId: values.committeeId,
         applicantName: values.applicantName,
         email: values.email,
-        committeeId: values.committeeId,
-        committeeName: committee?.name ?? 'Committee',
-        committeeAbbr: committee?.abbr ?? 'N/A',
-        eventId: event?.id ?? committee?.eventId ?? '',
-        eventName: event?.name ?? 'Event',
-        eventDate: event?.date ?? new Date().toISOString(),
         paymentMethod: values.paymentMethod,
-        amount: computedFees.total,
-        baseFee: computedFees.baseFee,
-        committeeFee: computedFees.committeeFee,
-        serviceFee: computedFees.serviceFee,
-        tax: computedFees.tax,
-        discount: computedFees.discount,
-        createdAt: currentSession?.createdAt ?? new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+        billingName: values.billingName,
+        couponCode: values.couponCode ?? '',
+      });
 
+      const order = data.data;
+      const processingSession = createSessionFromOrder(order, values, attempts, 'processing');
       setSession(processingSession);
-      setInfoMessage('Payment order is processing. Keep this tab open until it completes.');
+      setInfoMessage('Razorpay order created. Complete the checkout popup to confirm payment.');
 
-      await new Promise((resolve) => window.setTimeout(resolve, 1300));
+      await loadRazorpayCheckout();
 
-      if ((values.couponCode ?? '').trim().toUpperCase() === 'DECLINED') {
-        const failedSession: PaymentSession = {
-          ...processingSession,
-          status: 'failed',
-          failureReason: 'Sandbox decline triggered by coupon code DECLINED.',
-          updatedAt: new Date().toISOString(),
-        };
-
-        writeJson(paymentSessionKey, failedSession);
-        window.localStorage.removeItem(`${paymentSessionKey}:locked`);
-        return failedSession;
+      if (!window.Razorpay) {
+        throw new Error('Razorpay Checkout is unavailable. Please try again.');
       }
 
-      if (values.paymentMethod === 'bank_transfer') {
-        const pendingSession: PaymentSession = {
-          ...processingSession,
-          status: 'pending',
-          failureReason: 'Awaiting manual bank transfer verification.',
-          updatedAt: new Date().toISOString(),
-        };
+      const Razorpay = window.Razorpay;
 
-        writeJson(paymentSessionKey, pendingSession);
-        return pendingSession;
-      }
+      return await new Promise<PaymentSession>((resolve, reject) => {
+        const checkout = new Razorpay({
+          key: order.keyId,
+          amount: Math.round(order.amount * 100),
+          currency: order.currency,
+          name: 'Gridixia MUN',
+          description: `${order.event.name} - ${order.committee.abbr}`,
+          order_id: order.orderId,
+          prefill: {
+            name: values.billingName || values.applicantName,
+            email: values.email,
+          },
+          notes: {
+            registrationId: order.registrationId,
+            committeeId: order.committee.id,
+            eventId: order.event.id,
+          },
+          theme: { color: '#d4af37' },
+          modal: {
+            ondismiss: () => {
+              const failedSession: PaymentSession = {
+                ...processingSession,
+                status: 'failed',
+                failureReason: 'Checkout was closed before payment confirmation.',
+                updatedAt: new Date().toISOString(),
+              };
+              window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+              reject(failedSession);
+            },
+          },
+          handler: async (response) => {
+            try {
+              const verifyResult = await api.post<{ data: VerifyPaymentResponse }>(
+                '/payments/verify',
+                {
+                  razorpayOrderId: response.razorpay_order_id,
+                  razorpayPaymentId: response.razorpay_payment_id,
+                  razorpaySignature: response.razorpay_signature,
+                },
+              );
 
-      const successSession: PaymentSession = {
-        ...processingSession,
-        status: 'success',
-        updatedAt: new Date().toISOString(),
-      };
+              const verified = verifyResult.data.data;
+              resolve({
+                ...processingSession,
+                status: verified.status,
+                paymentId: verified.paymentId,
+                failureReason: verified.failureReason,
+                updatedAt: new Date().toISOString(),
+              });
+            } catch (error) {
+              reject({
+                ...processingSession,
+                status: 'failed',
+                failureReason: getApiErrorMessage(error, 'Payment verification failed.'),
+                updatedAt: new Date().toISOString(),
+              } satisfies PaymentSession);
+            }
+          },
+        });
 
-      writeJson(paymentSessionKey, successSession);
-      window.localStorage.removeItem(`${paymentSessionKey}:locked`);
-      return successSession;
+        checkout.open();
+      });
     },
     onSuccess: (result) => {
       setSession(result);
+      writeJson(paymentSessionKey, result);
       setInfoMessage(
         result.status === 'success'
-          ? 'Payment completed successfully. Your order is locked to prevent duplicates.'
-          : result.status === 'pending'
-            ? 'Payment is pending manual verification. The order is preserved for recovery.'
-            : 'Payment failed. You can retry using the same order or clear the session to start fresh.',
+          ? 'Payment verified successfully. Registration is now confirmed.'
+          : 'Payment status updated. You can retry if it did not complete.',
       );
+      if (result.status === 'success' || result.status === 'failed') {
+        window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+      }
       queryClient.invalidateQueries({ queryKey: ['delegates'] });
     },
     onError: (error) => {
-      setInfoMessage(error instanceof Error ? error.message : 'Unable to create a payment order.');
+      if (isPaymentSession(error)) {
+        const failedSession = error;
+        setSession(failedSession);
+        writeJson(paymentSessionKey, failedSession);
+        window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+        setInfoMessage(failedSession.failureReason ?? 'Payment did not complete.');
+        return;
+      }
+
+      setInfoMessage(getApiErrorMessage(error, 'Unable to create a payment order.'));
     },
   });
 
@@ -486,7 +608,11 @@ export function PaymentExperience() {
       return;
     }
 
-    await paymentMutation.mutateAsync(values);
+    try {
+      await paymentMutation.mutateAsync(values);
+    } catch {
+      // onError owns the user-facing state for checkout dismissals and verification failures.
+    }
   });
 
   const resumeSavedSession = () => {
@@ -517,16 +643,20 @@ export function PaymentExperience() {
       failureReason: undefined,
       updatedAt: new Date().toISOString(),
     });
-    await paymentMutation.mutateAsync({
-      applicantName: session.applicantName,
-      email: session.email,
-      committeeId: session.committeeId,
-      paymentMethod: session.paymentMethod,
-      billingName: session.applicantName,
-      couponCode: '',
-      consent: true,
-    });
-    setLastRecoveryAction('Retried existing order');
+    try {
+      await paymentMutation.mutateAsync({
+        applicantName: session.applicantName,
+        email: session.email,
+        committeeId: session.committeeId,
+        paymentMethod: session.paymentMethod,
+        billingName: session.applicantName,
+        couponCode: '',
+        consent: true,
+      });
+      setLastRecoveryAction('Retried payment order');
+    } catch {
+      // onError updates the visible failure state.
+    }
   };
 
   const startFresh = () => {
@@ -692,7 +822,7 @@ export function PaymentExperience() {
                 >
                   <option value="card">Card</option>
                   <option value="upi">UPI</option>
-                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="netbanking">Net Banking</option>
                 </select>
               </div>
               <div className="space-y-1.5">
@@ -708,7 +838,7 @@ export function PaymentExperience() {
                 <Input
                   id="couponCode"
                   {...form.register('couponCode')}
-                  placeholder="Optional promo code or DECLINED for sandbox failure"
+                  placeholder="Optional promo code"
                 />
               </div>
               <label className="flex items-start gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 sm:col-span-2">
@@ -803,7 +933,7 @@ export function PaymentExperience() {
               <p>
                 Refreshing the page restores the payment session and preserves the current order ID.
               </p>
-              <p>Pending bank transfers remain visible until manual verification completes.</p>
+              <p>Closed or failed checkout attempts remain recoverable from this panel.</p>
             </CardContent>
           </Card>
 

@@ -94,9 +94,6 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
               to={to}
               end={to === '/'}
               className={({ isActive }) => cn('nav-item', isActive && 'active')}
-              aria-current={({ isActive }: { isActive: boolean }) =>
-                isActive ? 'page' : undefined
-              }
               onClick={onClose}
             >
               {({ isActive }) => (

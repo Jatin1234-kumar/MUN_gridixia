@@ -1,4 +1,4 @@
-import type { Worker } from 'bullmq';
+import type { Queue, Worker } from 'bullmq';
 import {
   QUEUE,
   getQrQueue,
@@ -58,7 +58,8 @@ export async function getWorkerHealth(): Promise<WorkerHealth[]> {
   });
 }
 
-const QUEUE_GETTERS: Record<string, () => ReturnType<typeof getQrQueue>> = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const QUEUE_GETTERS: Record<string, () => Queue<any>> = {
   [QUEUE.QR]: getQrQueue,
   [QUEUE.CERTIFICATE]: getCertificateQueue,
   [QUEUE.EMAIL]: getEmailQueue,

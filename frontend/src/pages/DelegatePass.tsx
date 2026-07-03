@@ -4,7 +4,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import {
   Download,
   Flag,
-  IdCard,
+  CreditCard,
   Mail,
   MapPinned,
   Printer,
@@ -126,13 +126,13 @@ export default function DelegatePass() {
     return orderId ? `DP-${orderId.slice(-8).toUpperCase()}` : 'DP-PENDING';
   }, [state?.session?.orderId]);
 
-  const country = state?.draft?.countryPreference.firstChoiceCountry || 'Pending assignment';
+  const country = state?.draft?.countryPreference?.firstChoiceCountry || 'Pending assignment';
   const committee =
     state?.session?.committeeName ||
-    state?.draft?.committeePreference.preferredCommitteeName ||
+    state?.draft?.committeePreference?.preferredCommitteeName ||
     'Awaiting committee';
   const delegateName =
-    state?.session?.applicantName || state?.draft?.personal.fullName || 'Delegate Pending';
+    state?.session?.applicantName || state?.draft?.personal?.fullName || 'Delegate Pending';
   const allocationDate = state?.session?.createdAt || new Date().toISOString();
   const qrValue = [ticket, committee, country, delegateName].join('|');
 
@@ -140,7 +140,7 @@ export default function DelegatePass() {
   const isPending =
     !state?.session?.orderId ||
     !state?.session?.committeeName ||
-    !state?.draft?.countryPreference.firstChoiceCountry;
+    !state?.draft?.countryPreference?.firstChoiceCountry;
   const passStatus = getPassStatus(state?.session);
   const statusConfig = passStatusConfig[passStatus];
 
@@ -207,11 +207,11 @@ export default function DelegatePass() {
   };
 
   function buildPassMarkup(deps: Required<Pick<PassState, 'draft' | 'session'>>) {
-    const name = deps.draft.personal.fullName || 'Pending Delegate';
-    const countryVal = deps.draft.countryPreference.firstChoiceCountry || 'Pending';
+    const name = deps.draft.personal?.fullName || 'Pending Delegate';
+    const countryVal = deps.draft.countryPreference?.firstChoiceCountry || 'Pending';
     const committeeVal =
       deps.session.committeeName ||
-      deps.draft.committeePreference.preferredCommitteeName ||
+      deps.draft.committeePreference?.preferredCommitteeName ||
       'Unassigned';
     const ticketVal = deps.session.orderId
       ? `DP-${deps.session.orderId.slice(-8).toUpperCase()}`
@@ -353,7 +353,7 @@ export default function DelegatePass() {
                     <AllocationField
                       label="Allocation Date"
                       value={formatDate(allocationDate)}
-                      icon={IdCard}
+                      icon={CreditCard}
                     />
                   </div>
                 </div>
@@ -430,7 +430,7 @@ export default function DelegatePass() {
             <CardHeader className="space-y-3 border-b border-white/[0.06] bg-white/[0.015]">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gold-500/20 bg-gold-500/10 text-gold-400">
-                  <IdCard className="h-4 w-4" />
+                  <CreditCard className="h-4 w-4" />
                 </div>
                 <div>
                   <CardTitle className="text-base text-foreground">Pass Summary</CardTitle>

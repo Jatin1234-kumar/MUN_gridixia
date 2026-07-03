@@ -24,6 +24,12 @@ export const config = {
   },
   redis: { url: env.REDIS_URL },
   sentry: { dsn: env.SENTRY_DSN },
+  superAdmin: {
+    email: env.SUPER_ADMIN_EMAIL,
+    password: env.SUPER_ADMIN_PASSWORD,
+    firstName: env.SUPER_ADMIN_FIRST_NAME ?? 'Super',
+    lastName: env.SUPER_ADMIN_LAST_NAME ?? 'Admin',
+  },
   cors: {
     origins: env.CORS_ORIGINS ? env.CORS_ORIGINS.split(',').map((o) => o.trim()) : [],
   },

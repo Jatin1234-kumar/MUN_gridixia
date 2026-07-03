@@ -99,7 +99,7 @@ function Hero() {
       <div className="relative mx-auto max-w-7xl px-6 text-center">
         <motion.div {...fadeUp}>
           <Badge
-            variant="outline"
+            variant="default"
             className="mb-6 border-gold-500/30 bg-gold-500/10 text-gold-400 font-mono text-[10px] uppercase tracking-[0.3em]"
           >
             Conference Operations Platform
@@ -141,7 +141,7 @@ function Hero() {
             <ArrowRight size={16} />
           </Button>
           <Button
-            variant="outline"
+            variant="default"
             size="lg"
             className="h-12 px-8 text-sm"
             onClick={() => navigate('/login')}
@@ -236,7 +236,7 @@ function Features() {
       <div className="mx-auto max-w-7xl px-6">
         <motion.div {...fadeUp} className="text-center">
           <Badge
-            variant="outline"
+            variant="default"
             className="mb-4 border-gold-500/20 bg-gold-500/5 text-gold-400 font-mono text-[10px] uppercase tracking-[0.3em]"
           >
             Platform Capabilities
@@ -319,7 +319,7 @@ function HowItWorks() {
       <div className="mx-auto max-w-7xl px-6">
         <motion.div {...fadeUp} className="text-center">
           <Badge
-            variant="outline"
+            variant="default"
             className="mb-4 border-gold-500/20 bg-gold-500/5 text-gold-400 font-mono text-[10px] uppercase tracking-[0.3em]"
           >
             Delegate Journey
@@ -427,7 +427,7 @@ function Pricing() {
       <div className="mx-auto max-w-7xl px-6">
         <motion.div {...fadeUp} className="text-center">
           <Badge
-            variant="outline"
+            variant="default"
             className="mb-4 border-gold-500/20 bg-gold-500/5 text-gold-400 font-mono text-[10px] uppercase tracking-[0.3em]"
           >
             Pricing
@@ -524,7 +524,7 @@ function Testimonials() {
       <div className="mx-auto max-w-7xl px-6">
         <motion.div {...fadeUp} className="text-center">
           <Badge
-            variant="outline"
+            variant="default"
             className="mb-4 border-gold-500/20 bg-gold-500/5 text-gold-400 font-mono text-[10px] uppercase tracking-[0.3em]"
           >
             Testimonials
@@ -597,7 +597,7 @@ function Security() {
           <div className="grid gap-10 lg:grid-cols-2">
             <motion.div {...fadeUp}>
               <Badge
-                variant="outline"
+                variant="default"
                 className="mb-4 border-gold-500/20 bg-gold-500/5 text-gold-400 font-mono text-[10px] uppercase tracking-[0.3em]"
               >
                 Security & Infrastructure
@@ -660,7 +660,7 @@ function CTA() {
               <ArrowRight size={16} />
             </Button>
             <Button
-              variant="outline"
+              variant="default"
               size="lg"
               className="h-12 px-8 text-sm"
               onClick={() => navigate('/login')}

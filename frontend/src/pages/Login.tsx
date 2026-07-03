@@ -3,6 +3,7 @@ import { useNavigate, useLocation, Navigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Globe2, Mail, Lock, Eye, EyeOff, AlertCircle, X } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
+import { getApiErrorMessage } from '@/lib/api';
 import { useSeo, PAGE_SEO } from '@/lib/seo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -52,8 +53,7 @@ export default function Login() {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Login failed. Please try again.';
-      setError(message);
+      setError(getApiErrorMessage(err, 'Login failed. Please try again.'));
     } finally {
       setIsSubmitting(false);
     }

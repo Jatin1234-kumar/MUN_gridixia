@@ -116,9 +116,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'AUTH_SUCCESS', payload: { user: data.user, accessToken: data.accessToken } });
       setAccessToken(data.accessToken);
       scheduleRefresh(15 * 60 * 1000);
-    } catch (err) {
+    } catch (err: any) {
       dispatch({ type: 'AUTH_FAILURE' });
-      throw err;
+      
+      // ADD THIS LOG TO SEE THE EXACT 75-BYTE VALIDATION ERROR
+      if (err.response && err.response.status === 422) {
+        console.error("❌ Backend Validation Error:", err.response.data);
+      }
+      
+      throw err; // Re-throw so your UI component can catch it and display an error message
     }
   }, [scheduleRefresh]);
 

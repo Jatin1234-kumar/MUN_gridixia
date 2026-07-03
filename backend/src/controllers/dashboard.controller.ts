@@ -42,7 +42,7 @@ export const getDashboardStats = asyncHandler(async (_req: Request, res: Respons
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, 10)
     .map((d) => ({
-      id: d.id,
+      id: String(d._id),
       name: d.name,
       committee: d.committee,
       country: d.country,

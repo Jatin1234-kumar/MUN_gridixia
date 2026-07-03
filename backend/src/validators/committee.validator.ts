@@ -33,6 +33,7 @@ export const updateCommitteeSchema = z.object({
     type: z.enum(eventTypes).optional(),
     difficulty: z.enum(committeeDifficulties).optional(),
     capacity: z.number().int().min(1).max(1000).optional(),
+    filledSeats: z.number().int().min(0).optional(),
     isLocked: z.boolean().optional(),
   }),
 });

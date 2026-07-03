@@ -14,12 +14,12 @@ export const committeeController = {
   }),
 
   create: asyncHandler(async (req, res) => {
-    const data = await committeeService.create(req.body);
+    const data = await committeeService.create(req.body as import('../validators/committee.validator').CreateCommitteeDto);
     res.status(201).json({ data });
   }),
 
   update: asyncHandler(async (req, res) => {
-    const data = await committeeService.update(req.params.id, req.body);
+    const data = await committeeService.update(req.params.id, req.body as import('../validators/committee.validator').UpdateCommitteeDto);
     res.json({ data });
   }),
 

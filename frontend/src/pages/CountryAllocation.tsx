@@ -107,7 +107,7 @@ export default function CountryAllocation() {
   const loading = committeesLoading || eventsLoading || draft === undefined;
 
   const allocatedCommittee = useMemo(() => {
-    const committeeId = draft?.committeePreference.preferredCommitteeId ?? session?.committeeId;
+    const committeeId = draft?.committeePreference?.preferredCommitteeId ?? session?.committeeId;
     return committees.find((committee: Committee) => committee.id === committeeId);
   }, [committees, draft, session]);
 
@@ -116,19 +116,19 @@ export default function CountryAllocation() {
     return events.find((event: Event) => event.id === eventId);
   }, [allocatedCommittee, events, session]);
 
-  const countryName = draft?.countryPreference.firstChoiceCountry || 'Pending allocation';
-  const flag = countryFlag(draft?.countryPreference.firstChoiceCountry);
+  const countryName = draft?.countryPreference?.firstChoiceCountry || 'Pending allocation';
+  const flag = countryFlag(draft?.countryPreference?.firstChoiceCountry);
   const committeeName =
     allocatedCommittee?.name ||
-    draft?.committeePreference.preferredCommitteeName ||
+    draft?.committeePreference?.preferredCommitteeName ||
     'Awaiting assignment';
   const agenda =
     allocatedCommittee?.topic ||
     allocatedEvent?.description ||
     'Committee agenda will appear once allocation is confirmed.';
-  const allocationDate = session?.updatedAt || draft?.personal.dateOfBirth || '';
+  const allocationDate = session?.updatedAt || draft?.personal?.dateOfBirth || '';
 
-  const isPending = !draft?.countryPreference.firstChoiceCountry || !allocatedCommittee;
+  const isPending = !draft?.countryPreference?.firstChoiceCountry || !allocatedCommittee;
 
   if (loading) {
     return (

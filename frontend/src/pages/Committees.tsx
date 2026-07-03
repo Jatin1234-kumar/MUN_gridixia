@@ -41,7 +41,7 @@ export default function Committees() {
     }
 
     if (filterType !== 'all') {
-      result = result.filter((c) => (filterType === 'MUN' ? c.type === 'MUN' : c.type === 'YP'));
+      result = result.filter((c) => (filterType === 'MUN' ? c.type === 'MUN' : c.type === 'YOUTH_PARLIAMENT'));
     }
 
     result.sort((a, b) => {

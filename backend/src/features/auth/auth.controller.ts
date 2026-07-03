@@ -12,13 +12,15 @@ function getClientMeta(req: Request) {
 }
 
 export const register = asyncHandler(async (req, res) => {
-  const result = await AuthService.register({ ...req.body, ...getClientMeta(req) });
+  const body = req.body as Record<string, unknown>;
+  const result = await AuthService.register({ ...body, ...getClientMeta(req) } as Parameters<typeof AuthService.register>[0]);
   res.cookie(COOKIE_NAME, result.refreshToken, REFRESH_COOKIE_OPTIONS);
   res.status(201).json({ accessToken: result.accessToken, user: result.user });
 });
 
 export const login = asyncHandler(async (req, res) => {
-  const result = await AuthService.login({ ...req.body, ...getClientMeta(req) });
+  const body = req.body as Record<string, unknown>;
+  const result = await AuthService.login({ ...body, ...getClientMeta(req) } as Parameters<typeof AuthService.login>[0]);
   res.cookie(COOKIE_NAME, result.refreshToken, REFRESH_COOKIE_OPTIONS);
   res.json({ accessToken: result.accessToken, user: result.user });
 });

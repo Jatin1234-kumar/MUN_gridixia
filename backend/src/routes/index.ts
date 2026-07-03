@@ -3,6 +3,7 @@ import eventRoutes from './event.routes';
 import committeeRoutes from './committee.routes';
 import delegateRoutes from './delegate.routes';
 import authRoutes from '../features/auth/auth.routes';
+import paymentRoutes from '../features/payments/payment.routes';
 import { getHealth, getWorkerStats, getQueueStats_ } from '../controllers/monitor.controller';
 import {
   listDlqJobs,
@@ -76,6 +77,7 @@ router.get('/monitoring/sentry', authenticate, authorize(['admin']), getSentryHe
 router.get('/monitoring/errors', authenticate, authorize(['admin']), getErrorStats);
 
 router.use('/auth', authRoutes);
+router.use('/payments', paymentRoutes);
 router.use('/events', eventRoutes);
 router.use('/committees', committeeRoutes);
 router.use('/delegates', delegateRoutes);

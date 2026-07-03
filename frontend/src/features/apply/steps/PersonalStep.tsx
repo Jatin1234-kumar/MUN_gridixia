@@ -19,7 +19,7 @@ interface Props {
 }
 
 export function PersonalStep({ defaultValues, onNext, savedAt, direction }: Props) {
-  const { register, handleSubmit, formState: { errors, isValid } } = useForm<PersonalData>({
+  const { register, handleSubmit, formState: { errors } } = useForm<PersonalData>({
     resolver: zodResolver(personalSchema),
     defaultValues: defaultValues ?? {},
     mode: 'onBlur',

@@ -1,5 +1,10 @@
 import { z } from 'zod';
 
+const emptyStringToUndefined = (value: unknown) => value === '' ? undefined : value;
+const optionalString = z.preprocess(emptyStringToUndefined, z.string().min(1).optional());
+const optionalEmail = z.preprocess(emptyStringToUndefined, z.string().email().optional());
+const optionalPassword = z.preprocess(emptyStringToUndefined, z.string().min(8).optional());
+
 const envSchema = z.object({
   // ── Server ────────────────────────────────────────────────────────────────
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -37,7 +42,21 @@ const envSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
 
   // ── Sentry ───────────────────────────────────────────────────────────────
-  SENTRY_DSN: z.string().optional(),
+  SENTRY_DSN: optionalString,
+
+  // Super admin seed
+  SUPER_ADMIN_EMAIL: optionalEmail,
+  SUPER_ADMIN_PASSWORD: optionalPassword,
+  SUPER_ADMIN_FIRST_NAME: optionalString,
+  SUPER_ADMIN_LAST_NAME: optionalString,
+}).superRefine((env, ctx) => {
+  if (env.SUPER_ADMIN_EMAIL && !env.SUPER_ADMIN_PASSWORD) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['SUPER_ADMIN_PASSWORD'],
+      message: 'SUPER_ADMIN_PASSWORD is required when SUPER_ADMIN_EMAIL is set',
+    });
+  }
 });
 
 // Infer the validated type so consumers get full type-safety

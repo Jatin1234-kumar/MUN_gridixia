@@ -21,7 +21,7 @@ export async function listDlqJobs(start = 0, end = 50) {
   const dlq = getDeadLetterQueue();
   const jobs = await dlq.getJobs(['waiting', 'active', 'completed', 'failed'], start, end);
   return jobs.map((job) => ({
-    id: job.id,
+    id: job.id ?? null,
     data: job.data,
     timestamp: job.timestamp,
     failedReason: job.failedReason,

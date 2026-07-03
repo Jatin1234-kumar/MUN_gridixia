@@ -32,6 +32,7 @@ export interface Payment extends SoftDeleteFields {
   paidAt?: Date | null;
   refundedAt?: Date | null;
   failureReason?: string | null;
+  metadata?: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -67,6 +68,7 @@ const paymentSchema = new Schema<Payment>(
     paidAt: { type: Date, default: null },
     refundedAt: { type: Date, default: null },
     failureReason: { type: String, trim: true, maxlength: 1000, default: null },
+    metadata: { type: Schema.Types.Mixed, default: {} },
   },
   { optimisticConcurrency: true },
 );
