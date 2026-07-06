@@ -1,6 +1,7 @@
 import { Request } from 'express';
 import { AuthService, REFRESH_COOKIE_OPTIONS } from './auth.service';
 import { asyncHandler } from '../../utils/asyncHandler';
+import type { AuthenticatedRequest } from '../../middleware/authenticate';
 
 const COOKIE_NAME = 'refresh_token';
 
@@ -33,13 +34,29 @@ export const refresh = asyncHandler(async (req, res) => {
   }
   const result = await AuthService.refresh(token);
   res.cookie(COOKIE_NAME, result.refreshToken, REFRESH_COOKIE_OPTIONS);
-  res.json({ accessToken: result.accessToken });
+  res.json({ accessToken: result.accessToken, user: result.user });
 });
 
 export const logout = asyncHandler(async (req, res) => {
   const { ipAddress, userAgent } = getClientMeta(req);
-  const userId = (req as Request & { user?: { sub: string } }).user?.sub;
+  const userId = (req as AuthenticatedRequest).user?.sub;
   if (userId) await AuthService.logout(userId, ipAddress, userAgent);
   res.clearCookie(COOKIE_NAME, { path: REFRESH_COOKIE_OPTIONS.path });
   res.status(204).send();
+});
+
+export const createUser = asyncHandler(async (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
+  const body = req.body as Record<string, unknown>;
+  const user = await AuthService.createUser({
+    firstName: body.firstName as string,
+    lastName: body.lastName as string,
+    email: body.email as string,
+    password: body.password as string,
+    role: body.role as 'admin' | 'organizer',
+    actorRole: actor.role,
+    actorId: actor.sub,
+    ...getClientMeta(req),
+  });
+  res.status(201).json({ data: user });
 });

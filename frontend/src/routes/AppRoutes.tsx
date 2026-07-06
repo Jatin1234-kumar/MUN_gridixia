@@ -22,6 +22,7 @@ const Payments = lazy(() => import('@/pages/Payments'));
 const Reports = lazy(() => import('@/pages/Reports'));
 const Settings = lazy(() => import('@/pages/Settings'));
 const Monitoring = lazy(() => import('@/pages/Monitoring'));
+const Apply = lazy(() => import('@/pages/Apply'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 
 export default function AppRoutes() {
@@ -49,6 +50,7 @@ export default function AppRoutes() {
             <Route path="/check-in" element={<CheckInScanner />} />
             <Route path="/certificate-vault" element={<CertificateVault />} />
             <Route path="/payments" element={<Payments />} />
+            <Route path="/apply/:eventId" element={<Apply />} />
 
             <Route element={<RoleGuard roles={['organizer', 'admin', 'super_admin']} />}>
               <Route path="/command-center" element={<CommandCenter />} />

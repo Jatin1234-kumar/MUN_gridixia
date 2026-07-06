@@ -275,6 +275,8 @@ export default function CheckInScanner() {
     let cancelled = false;
 
     async function startCamera() {
+      // attach videoRef to the DOM element
+      videoRef.current = document.getElementById('checkin-video') as HTMLVideoElement | null;
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
@@ -310,7 +312,7 @@ export default function CheckInScanner() {
         setMessage('Camera active. Hold a QR code inside the frame.');
 
         scanTimerRef.current = window.setInterval(async () => {
-          if (scanLockRef.current || !videoRef.current || scannerStatus === 'success') return;
+          if (scanLockRef.current || !videoRef.current) return;
 
           try {
             const results = await detectorRef.current?.detect(videoRef.current);
@@ -392,17 +394,8 @@ export default function CheckInScanner() {
       }
       streamRef.current?.getTracks().forEach((track) => track.stop());
     };
-  }, [
-    canCheckIn,
-    committeeName,
-    country,
-    delegateName,
-    existingRecord,
-    session?.orderId,
-    session?.receiptId,
-    scannerStatus,
-    ticket,
-  ]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canCheckIn, existingRecord, ticket]);
 
   useEffect(() => {
     if (scannerStatus === 'success') {

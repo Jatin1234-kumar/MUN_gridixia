@@ -1,17 +1,21 @@
 export type EventType = 'MUN' | 'YOUTH_PARLIAMENT';
-export type EventStatus = 'active' | 'pending' | 'inactive';
+export type EventStatus = 'draft' | 'pending' | 'active' | 'inactive' | 'archived';
 
 export interface Event {
   id: string;
   name: string;
-  date: string;
+  slug: string;
+  startAt: string;
+  endAt: string;
   type: EventType;
   status: EventStatus;
   location: string;
   description: string;
+  capacity: number;
+  isPublic: boolean;
   delegateCount?: number;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type CommitteeDifficulty = 'beginner' | 'intermediate' | 'advanced';
@@ -26,9 +30,12 @@ export interface Committee {
   type: EventType;
   difficulty: CommitteeDifficulty;
   status: CommitteeStatus;
-  delegates: number;
+  filledSeats: number;
   capacity: number;
   eventId: string;
+  isLocked: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface Delegate {

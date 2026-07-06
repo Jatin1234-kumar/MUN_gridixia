@@ -34,4 +34,6 @@ router.delete(
   eventController.delete,
 );
 
+router.post('/:eventId/applications', authenticate, eventController.apply);
+
 export default router;

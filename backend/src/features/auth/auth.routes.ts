@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { validate } from '../../middleware/validate';
-import { authenticate } from '../../middleware/authenticate';
-import { register, login, refresh, logout } from './auth.controller';
-import { registerSchema, loginSchema } from './auth.validator';
+import { authenticate, authorize } from '../../middleware/authenticate';
+import { register, login, refresh, logout, createUser } from './auth.controller';
+import { registerSchema, loginSchema, createUserSchema } from './auth.validator';
 
 const router = Router();
 
@@ -36,5 +36,14 @@ router.post('/register', authLimiter, validate(registerSchema), register);
 router.post('/login', strictLimiter, validate(loginSchema), login);
 router.post('/refresh', refreshLimiter, refresh);
 router.post('/logout', authenticate, logout);
+
+// Admin-managed user creation: super_admin creates admins, admin/super_admin creates organizers
+router.post(
+  '/users',
+  authenticate,
+  authorize(['admin']),
+  validate(createUserSchema),
+  createUser,
+);
 
 export default router;

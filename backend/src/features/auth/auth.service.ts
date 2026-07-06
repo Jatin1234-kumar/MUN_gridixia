@@ -41,12 +41,12 @@ export const REFRESH_COOKIE_OPTIONS = {
 };
 
 export const AuthService = {
+  // Public registration — always creates a delegate
   async register(data: {
     firstName: string;
     lastName: string;
     email: string;
     password: string;
-    role?: UserRole;
     ipAddress?: string;
     userAgent?: string;
   }) {
@@ -61,7 +61,7 @@ export const AuthService = {
         lastName: data.lastName,
         email: data.email,
         passwordHash,
-        role: data.role ?? 'delegate',
+        role: 'delegate',
       });
     } catch (err: unknown) {
       if (
@@ -92,8 +92,65 @@ export const AuthService = {
     return {
       accessToken: signAccess(payload),
       refreshToken: signRefresh(payload),
-      user: { id: user.id, email: user.email, role: user.role },
+      user: { id: user.id as string, email: user.email, role: user.role },
     };
+  },
+
+  // Admin-only: create a user with an elevated role (admin or organizer)
+  async createUser(data: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    password: string;
+    role: 'admin' | 'organizer';
+    actorRole: UserRole;
+    actorId: string;
+    ipAddress?: string;
+    userAgent?: string;
+  }) {
+    // Only super_admin can create admins; admin and super_admin can create organizers
+    if (data.role === 'admin' && data.actorRole !== 'super_admin') {
+      throw new AppError(403, 'Only super_admin can create admin accounts');
+    }
+    if (data.role === 'organizer' && data.actorRole !== 'super_admin' && data.actorRole !== 'admin') {
+      throw new AppError(403, 'Only admin or super_admin can create organizer accounts');
+    }
+
+    const existing = await AuthRepository.findByEmail(data.email);
+    if (existing) throw new AppError(409, 'Email already in use');
+
+    const passwordHash = await bcrypt.hash(data.password, SALT_ROUNDS);
+    let user;
+    try {
+      user = await AuthRepository.create({
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email: data.email,
+        passwordHash,
+        role: data.role,
+      });
+    } catch (err: unknown) {
+      if (
+        err &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code: number }).code === 11000
+      ) {
+        throw new AppError(409, 'Email already in use');
+      }
+      throw err;
+    }
+
+    await AuthRepository.logAudit({
+      actorId: user._id,
+      actorRole: data.actorRole,
+      entityId: user.id as string,
+      action: 'create',
+      ipAddress: data.ipAddress,
+      userAgent: data.userAgent,
+    });
+
+    return { id: user.id as string, email: user.email, role: user.role };
   },
 
   async login(data: { email: string; password: string; ipAddress?: string; userAgent?: string }) {
@@ -121,7 +178,7 @@ export const AuthService = {
     return {
       accessToken: signAccess(payload),
       refreshToken: signRefresh(payload),
-      user: { id: user.id, email: user.email, role: user.role },
+      user: { id: user.id as string, email: user.email, role: user.role },
     };
   },
 
@@ -144,6 +201,7 @@ export const AuthService = {
     return {
       accessToken: signAccess(newPayload),
       refreshToken: signRefresh(newPayload),
+      user: { id: user.id as string, email: user.email, role: user.role },
     };
   },
 

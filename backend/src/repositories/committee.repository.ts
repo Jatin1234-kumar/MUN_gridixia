@@ -6,26 +6,21 @@ export const committeeRepository = {
   findAll() {
     return CommitteeModel.find({ isDeleted: { $ne: true } })
       .sort({ name: 1 })
-      .lean()
       .exec();
   },
 
   findById(id: string) {
-    return CommitteeModel.findById(id).lean().exec() as Promise<InstanceType<
-      typeof CommitteeModel
-    > | null>;
+    return CommitteeModel.findById(id).exec();
   },
 
   findByEventId(eventId: string) {
     return CommitteeModel.find({ eventId: new Types.ObjectId(eventId) })
       .sort({ name: 1 })
-      .lean()
       .exec();
   },
 
   findByAbbr(abbr: string) {
     return CommitteeModel.findOne({ abbr: abbr.toUpperCase(), isDeleted: { $ne: true } })
-      .lean()
       .exec();
   },
 
@@ -35,8 +30,7 @@ export const committeeRepository = {
 
   update(id: string, dto: UpdateCommitteeDto) {
     return CommitteeModel.findByIdAndUpdate(id, { $set: dto }, { new: true, runValidators: true })
-      .lean()
-      .exec() as Promise<InstanceType<typeof CommitteeModel> | null>;
+      .exec();
   },
 
   softDelete(id: string, deletedBy?: string) {
@@ -50,15 +44,9 @@ export const committeeRepository = {
         },
       },
       { new: true },
-    )
-      .lean()
-      .exec() as Promise<InstanceType<typeof CommitteeModel> | null>;
+    ).exec();
   },
 
-  /**
-   * Atomically increments filledSeats by `delta` only when result stays in [0, capacity].
-   * Returns null when the guard fails.
-   */
   incrementFilledSeats(id: string, delta: 1 | -1) {
     const filter =
       delta === 1
@@ -66,7 +54,6 @@ export const committeeRepository = {
         : { _id: new Types.ObjectId(id), filledSeats: { $gt: 0 } };
 
     return CommitteeModel.findOneAndUpdate(filter, { $inc: { filledSeats: delta } }, { new: true })
-      .lean()
-      .exec() as Promise<InstanceType<typeof CommitteeModel> | null>;
+      .exec();
   },
 };

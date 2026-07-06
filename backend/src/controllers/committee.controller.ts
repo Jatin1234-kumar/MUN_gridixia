@@ -3,6 +3,11 @@ import { asyncHandler } from '../utils/asyncHandler';
 import type { AuthenticatedRequest } from '../middleware/authenticate';
 
 export const committeeController = {
+  getAll: asyncHandler(async (_req, res) => {
+    const data = await committeeService.getAll();
+    res.json({ data });
+  }),
+
   getByEventId: asyncHandler(async (req, res) => {
     const data = await committeeService.getByEventId(req.params.eventId);
     res.json({ data });

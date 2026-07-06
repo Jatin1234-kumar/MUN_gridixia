@@ -30,4 +30,22 @@ export const eventController = {
     await eventService.delete(req.params.id);
     res.status(204).send();
   }),
+
+  apply: asyncHandler(async (req, res) => {
+    const { eventId } = req.params;
+    const event = await eventService.getById(eventId);
+    if (!event) {
+      res.status(404).json({ message: 'Event not found' });
+      return;
+    }
+    // Store application data — for now acknowledge receipt
+    // Full payment + delegate creation flow can be wired here
+    res.status(201).json({
+      data: {
+        id: `app_${Date.now()}`,
+        eventId,
+        status: 'pending',
+      },
+    });
+  }),
 };
