@@ -5,6 +5,12 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => { open(): void };
+  }
+}
 import {
   AlertTriangle,
   CheckCircle2,
@@ -439,6 +445,7 @@ export function PaymentExperience() {
   const { session, setSession, savedDraft, setSavedDraft } = useRestoreableSession();
   const [infoMessage, setInfoMessage] = useState('Ready to create a secure order.');
   const [lastRecoveryAction, setLastRecoveryAction] = useState('');
+  const [formError, setFormError] = useState('');
   const seedValues = useMemo(() => getSeedValues(), []);
 
   const form = useForm<PaymentFormValues>({
@@ -600,20 +607,23 @@ export function PaymentExperience() {
     },
   });
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    if (hasActiveLock) {
-      setInfoMessage(
-        'A payment order is already active. Resume the saved session to avoid duplicate orders.',
-      );
-      return;
-    }
-
-    try {
-      await paymentMutation.mutateAsync(values);
-    } catch {
-      // onError owns the user-facing state for checkout dismissals and verification failures.
-    }
-  });
+  const onSubmit = form.handleSubmit(
+    async (values) => {
+      setFormError('');
+      if (hasActiveLock) {
+        setInfoMessage('A payment order is already active. Resume the saved session to avoid duplicate orders.');
+        return;
+      }
+      try {
+        await paymentMutation.mutateAsync(values);
+      } catch {
+        // onError owns the user-facing state for checkout dismissals and verification failures.
+      }
+    },
+    () => {
+      setFormError('Please fill in all required fields and check the consent checkbox.');
+    },
+  );
 
   const resumeSavedSession = () => {
     if (!session) return;
@@ -705,7 +715,7 @@ export function PaymentExperience() {
                 label="Event"
                 value={
                   selectedEvent
-                    ? `${selectedEvent.name} • ${formatDate(selectedEvent.date)}`
+                    ? `${selectedEvent.name} • ${formatDate(selectedEvent.startAt)}`
                     : 'Auto-linked to committee'
                 }
               />
@@ -762,7 +772,7 @@ export function PaymentExperience() {
               />
               <ValueRow
                 label="Event Date"
-                value={selectedEvent ? formatDate(selectedEvent.date) : '—'}
+                value={selectedEvent ? formatDate(selectedEvent.startAt) : '—'}
               />
             </div>
           </SectionCard>
@@ -863,6 +873,9 @@ export function PaymentExperience() {
                 <ShieldCheck size={13} className="text-gold-400" />
                 <span>{infoMessage}</span>
               </div>
+              {formError && (
+                <p className="text-xs text-red-400 w-full">{formError}</p>
+              )}
               <Button
                 onClick={onSubmit}
                 disabled={paymentMutation.isPending || hasActiveLock}

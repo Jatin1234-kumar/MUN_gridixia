@@ -176,8 +176,8 @@ export default function Committees() {
 
     result.sort((a, b) => {
       if (sortKey === 'name') return a.name.localeCompare(b.name);
-      const fillA = a.capacity > 0 ? a.delegates / a.capacity : 0;
-      const fillB = b.capacity > 0 ? b.delegates / b.capacity : 0;
+      const fillA = a.capacity > 0 ? a.filledSeats / a.capacity : 0;
+      const fillB = b.capacity > 0 ? b.filledSeats / b.capacity : 0;
       return fillB - fillA;
     });
 
@@ -186,10 +186,27 @@ export default function Committees() {
 
   if (isLoading) return <PageLoader />;
 
+  const pageHeader = (
+    <>
+      <AnimatePresence>{showCreate && <CommitteeFormModal onClose={() => setShowCreate(false)} />}</AnimatePresence>
+      <PageHeader
+        title="Committees"
+        subtitle="Active committees and delegate allocations"
+        actions={
+          canCreate ? (
+            <Button size="sm" onClick={() => setShowCreate(true)}>
+              <Plus size={14} /> New Committee
+            </Button>
+          ) : undefined
+        }
+      />
+    </>
+  );
+
   if (error) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Committees" subtitle="Active committees and delegate allocations" />
+        {pageHeader}
         <EmptyState
           icon={Building2}
           title="Failed to load committees"
@@ -203,7 +220,7 @@ export default function Committees() {
   if (committees.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Committees" subtitle="Active committees and delegate allocations" />
+        {pageHeader}
         <EmptyState
           icon={Building2}
           title="No committees yet"
@@ -215,7 +232,7 @@ export default function Committees() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Committees" subtitle="Active committees and delegate allocations" />
+      {pageHeader}
 
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="relative w-full max-w-sm">

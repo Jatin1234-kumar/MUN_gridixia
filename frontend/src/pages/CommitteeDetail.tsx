@@ -50,7 +50,7 @@ export default function CommitteeDetail() {
   }
 
   const fill =
-    committee.capacity > 0 ? Math.round((committee.delegates / committee.capacity) * 100) : 0;
+    committee.capacity > 0 ? Math.round((committee.filledSeats / committee.capacity) * 100) : 0;
 
   return (
     <div className="space-y-6 pb-8">
@@ -100,7 +100,7 @@ export default function CommitteeDetail() {
                     Delegates
                   </p>
                   <p className="mt-1 text-xl font-semibold text-foreground">
-                    {committee.delegates}/{committee.capacity}
+                    {committee.filledSeats}/{committee.capacity}
                   </p>
                 </div>
               </div>
@@ -189,7 +189,7 @@ export default function CommitteeDetail() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-muted-foreground">
-                    {committee.delegates} of {committee.capacity} seats filled
+                    {committee.filledSeats} of {committee.capacity} seats filled
                   </span>
                   <span className="text-xs font-mono text-gold-400">{fill}%</span>
                 </div>
@@ -199,18 +199,8 @@ export default function CommitteeDetail() {
                 <p className="text-[10px] uppercase tracking-[0.28em] text-muted-foreground mb-1">
                   Status
                 </p>
-                <Badge
-                  variant={
-                    committee.status === 'full'
-                      ? 'urgent'
-                      : committee.status === 'filling'
-                        ? 'pending'
-                        : committee.status === 'waitlist'
-                          ? 'inactive'
-                          : 'active'
-                  }
-                >
-                  {committee.status.charAt(0).toUpperCase() + committee.status.slice(1)}
+                <Badge variant={committee.isLocked ? 'urgent' : fill >= 100 ? 'inactive' : 'active'}>
+                  {committee.isLocked ? 'Locked' : fill >= 100 ? 'Full' : 'Open'}
                 </Badge>
               </div>
               <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
@@ -218,7 +208,7 @@ export default function CommitteeDetail() {
                   Remaining Seats
                 </p>
                 <p className="text-sm font-semibold text-foreground">
-                  {Math.max(0, committee.capacity - committee.delegates)}
+                  {Math.max(0, committee.capacity - committee.filledSeats)}
                 </p>
               </div>
             </CardContent>
