@@ -2,8 +2,8 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { validate } from '../../middleware/validate';
 import { authenticate, authorize } from '../../middleware/authenticate';
-import { register, login, refresh, logout, createUser } from './auth.controller';
-import { registerSchema, loginSchema, createUserSchema } from './auth.validator';
+import { register, login, refresh, logout, createUser, requestRoleUpgrade, reviewRoleRequest, listRoleRequests } from './auth.controller';
+import { registerSchema, loginSchema, createUserSchema, roleRequestSchema, reviewRoleRequestSchema } from './auth.validator';
 
 const router = Router();
 
@@ -44,6 +44,32 @@ router.post(
   authorize(['admin']),
   validate(createUserSchema),
   createUser,
+);
+
+// Role upgrade requests
+// Any authenticated user can submit a request
+router.post(
+  '/role-requests',
+  authenticate,
+  validate(roleRequestSchema),
+  requestRoleUpgrade,
+);
+
+// admin/super_admin can list pending requests
+router.get(
+  '/role-requests',
+  authenticate,
+  authorize(['admin']),
+  listRoleRequests,
+);
+
+// admin/super_admin can approve or reject
+router.patch(
+  '/role-requests/:requestId',
+  authenticate,
+  authorize(['admin']),
+  validate(reviewRoleRequestSchema),
+  reviewRoleRequest,
 );
 
 export default router;

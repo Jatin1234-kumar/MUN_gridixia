@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
+import api, { getApiErrorMessage } from '@/lib/api';
+import { useAuth } from '@/features/auth/AuthContext';
 import { motion } from 'framer-motion';
 import {
   Award,
@@ -19,6 +21,7 @@ import {
   ShieldCheck,
   Sparkles,
   Ticket,
+  TrendingUp,
   Users,
   Wallet,
 } from 'lucide-react';
@@ -27,6 +30,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { LiveCommitteeFeed } from '@/features/dashboard/LiveCommitteeFeed';
 import { useCommittees } from '@/hooks/useCommittees';
 import { useEvents } from '@/hooks/useEvents';
@@ -34,6 +38,59 @@ import { useSeo, PAGE_SEO } from '@/lib/seo';
 import { cn, formatDate, formatNumber } from '@/lib/utils';
 import { readJson } from '@/lib/storage';
 import type { Committee, DelegateApplicationDraft, Event, PaymentSession } from '@/types';
+
+type RoleUpgradeStatus = 'idle' | 'loading' | 'success' | 'error';
+
+function RoleUpgradeCard() {
+  const [reason, setReason] = useState('');
+  const [status, setStatus] = useState<RoleUpgradeStatus>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      await api.post('/auth/role-requests', { requestedRole: 'organizer', reason: reason || undefined });
+      setStatus('success');
+    } catch (err) {
+      setErrorMsg(getApiErrorMessage(err));
+      setStatus('error');
+    }
+  }
+
+  if (status === 'success') {
+    return (
+      <DataCard title="Role Upgrade Request" description="Request to become an organizer." icon={TrendingUp}>
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Request submitted. An admin will review it shortly.
+        </div>
+      </DataCard>
+    );
+  }
+
+  return (
+    <DataCard title="Role Upgrade Request" description="Ask an admin to upgrade your role to organizer." icon={TrendingUp}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Textarea
+          placeholder="Optional: explain why you'd like to become an organizer…"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={500}
+          rows={3}
+          className="resize-none bg-white/[0.02] border-white/[0.08] text-sm"
+        />
+        {status === 'error' && (
+          <p className="text-xs text-red-400">{errorMsg}</p>
+        )}
+        <Button type="submit" size="sm" disabled={status === 'loading'} className="w-full">
+          {status === 'loading' ? 'Submitting…' : 'Request Organizer Role'}
+        </Button>
+      </form>
+    </DataCard>
+  );
+}
 
 const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
 const paymentSessionKey = 'mun-gridixia:payment-session:v1';
@@ -199,6 +256,7 @@ function MetricCardSkeleton() {
 
 export default function Dashboard() {
   useSeo(PAGE_SEO.dashboard);
+  const { user } = useAuth();
   const { data: committees = [], isLoading: committeesLoading } = useCommittees();
   const { data: events = [], isLoading: eventsLoading } = useEvents();
   const [draft, setDraft] = useState<Partial<DelegateApplicationDraft> | undefined>(undefined);
@@ -510,6 +568,12 @@ export default function Dashboard() {
           </DataCard>
         </div>
       </div>
+
+      {user && ['guest', 'delegate'].includes(user.role) && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <RoleUpgradeCard />
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (

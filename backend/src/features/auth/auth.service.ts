@@ -205,6 +205,55 @@ export const AuthService = {
     };
   },
 
+  async requestRoleUpgrade(userId: string, requestedRole: 'organizer' | 'admin', currentRole: UserRole, reason?: string) {
+    // delegate can request organizer; organizer can request admin
+    if (requestedRole === 'organizer' && currentRole !== 'delegate') {
+      throw new AppError(400, 'Only delegates can request organizer role');
+    }
+    if (requestedRole === 'admin' && currentRole !== 'organizer') {
+      throw new AppError(400, 'Only organizers can request admin role');
+    }
+
+    const existing = await AuthRepository.findPendingRoleRequest(userId, requestedRole);
+    if (existing) throw new AppError(409, 'You already have a pending request for this role');
+
+    const request = await AuthRepository.createRoleRequest(userId, requestedRole, reason);
+    return request;
+  },
+
+  async reviewRoleRequest(
+    requestId: string,
+    action: 'approved' | 'rejected',
+    reviewerRole: UserRole,
+    reviewerId: string,
+  ) {
+    const request = await AuthRepository.findRoleRequestById(requestId);
+    if (!request) throw new AppError(404, 'Role request not found');
+    if (request.status !== 'pending') throw new AppError(400, 'Request already reviewed');
+
+    // organizer requests can be approved by admin or super_admin
+    // admin requests can only be approved by super_admin
+    if (request.requestedRole === 'admin' && reviewerRole !== 'super_admin') {
+      throw new AppError(403, 'Only super_admin can approve admin role requests');
+    }
+    if (request.requestedRole === 'organizer' && reviewerRole !== 'admin' && reviewerRole !== 'super_admin') {
+      throw new AppError(403, 'Only admin or super_admin can approve organizer role requests');
+    }
+
+    await AuthRepository.updateRoleRequestStatus(requestId, action, reviewerId);
+
+    if (action === 'approved') {
+      const userId = request.userId.toString();
+      await AuthRepository.updateUserRole(userId, request.requestedRole);
+    }
+
+    return { requestId, action };
+  },
+
+  async listRoleRequests(filter: { status?: string; requestedRole?: string } = {}) {
+    return AuthRepository.listRoleRequests(filter);
+  },
+
   async logout(userId: string, ipAddress?: string, userAgent?: string) {
     const user = await AuthRepository.incrementRefreshTokenVersion(userId);
     if (user) {

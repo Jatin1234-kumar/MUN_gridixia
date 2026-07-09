@@ -8,3 +8,4 @@ export * from './Ticket';
 export * from './Attendance';
 export * from './Certificate';
 export * from './AuditLog';
+export * from './RoleRequest';

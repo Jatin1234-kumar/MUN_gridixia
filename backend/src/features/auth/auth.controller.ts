@@ -45,6 +45,26 @@ export const logout = asyncHandler(async (req, res) => {
   res.status(204).send();
 });
 
+export const requestRoleUpgrade = asyncHandler(async (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
+  const { requestedRole, reason } = req.body as { requestedRole: 'organizer' | 'admin'; reason?: string };
+  const request = await AuthService.requestRoleUpgrade(actor.sub, requestedRole, actor.role, reason);
+  res.status(201).json({ data: request });
+});
+
+export const reviewRoleRequest = asyncHandler(async (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
+  const { action } = req.body as { action: 'approved' | 'rejected' };
+  const result = await AuthService.reviewRoleRequest(req.params.requestId, action, actor.role, actor.sub);
+  res.json({ data: result });
+});
+
+export const listRoleRequests = asyncHandler(async (req, res) => {
+  const { status, requestedRole } = req.query as { status?: string; requestedRole?: string };
+  const requests = await AuthService.listRoleRequests({ status, requestedRole });
+  res.json({ data: requests });
+});
+
 export const createUser = asyncHandler(async (req, res) => {
   const actor = (req as AuthenticatedRequest).user;
   const body = req.body as Record<string, unknown>;

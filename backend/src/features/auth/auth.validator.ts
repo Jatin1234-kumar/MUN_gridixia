@@ -36,8 +36,17 @@ export const loginSchema = z.object({
   }),
 });
 
-export const refreshSchema = z.object({
-  body: z.object({}),
+export const roleRequestSchema = z.object({
+  body: z.object({
+    requestedRole: z.enum(['organizer', 'admin']),
+    reason: z.string().max(500).optional(),
+  }),
+});
+
+export const reviewRoleRequestSchema = z.object({
+  body: z.object({
+    action: z.enum(['approved', 'rejected']),
+  }),
 });
 
 export const logoutSchema = z.object({

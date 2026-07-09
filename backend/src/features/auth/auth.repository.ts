@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { UserModel, type UserDocument } from '../../models/User';
 import { AuditLogModel } from '../../models/AuditLog';
+import { RoleRequestModel, type RoleRequestTarget } from '../../models/RoleRequest';
 
 export const AuthRepository = {
   findByEmail(email: string) {
@@ -27,6 +28,38 @@ export const AuthRepository = {
 
   updateLastLogin(id: string | Types.ObjectId) {
     return UserModel.findByIdAndUpdate(id, { lastLoginAt: new Date() }).exec();
+  },
+
+  createRoleRequest(userId: string | Types.ObjectId, requestedRole: RoleRequestTarget, reason?: string) {
+    return RoleRequestModel.create({ userId, requestedRole, reason });
+  },
+
+  findPendingRoleRequest(userId: string | Types.ObjectId, requestedRole: RoleRequestTarget) {
+    return RoleRequestModel.findOne({ userId, requestedRole, status: 'pending' }).exec();
+  },
+
+  listRoleRequests(filter: { status?: string; requestedRole?: string } = {}) {
+    return RoleRequestModel.find(filter).populate('userId', 'firstName lastName email role').sort({ createdAt: -1 }).exec();
+  },
+
+  findRoleRequestById(id: string | Types.ObjectId) {
+    return RoleRequestModel.findById(id).populate('userId', 'firstName lastName email role').exec();
+  },
+
+  updateRoleRequestStatus(
+    id: string | Types.ObjectId,
+    status: 'approved' | 'rejected',
+    reviewedBy: string | Types.ObjectId,
+  ) {
+    return RoleRequestModel.findByIdAndUpdate(
+      id,
+      { status, reviewedBy, reviewedAt: new Date() },
+      { new: true },
+    ).exec();
+  },
+
+  updateUserRole(userId: string | Types.ObjectId, role: RoleRequestTarget) {
+    return UserModel.findByIdAndUpdate(userId, { role }, { new: true }).exec();
   },
 
   logAudit(data: {
