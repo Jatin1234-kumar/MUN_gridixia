@@ -18,6 +18,7 @@ export interface Event extends SoftDeleteFields {
   location: string;
   timezone: string;
   capacity: number;
+  baseFee: number;
   registrationOpensAt?: Date | null;
   registrationClosesAt?: Date | null;
   featuredImageUrl?: string | null;
@@ -39,6 +40,7 @@ const eventSchema = new Schema<Event>(
     location: { type: String, required: true, trim: true, minlength: 2, maxlength: 255 },
     timezone: { type: String, required: true, trim: true, minlength: 2, maxlength: 100, default: 'UTC' },
     capacity: { type: Number, required: true, min: 1, max: 100000 },
+    baseFee: { type: Number, required: true, min: 0, default: 3500 },
     registrationOpensAt: { type: Date, default: null },
     registrationClosesAt: { type: Date, default: null },
     featuredImageUrl: { type: String, trim: true, maxlength: 2048, default: null },

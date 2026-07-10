@@ -12,6 +12,7 @@ import {
 const router = Router();
 
 // Public reads
+router.get('/', committeeController.getAll);
 router.get('/event/:eventId', validate(getByEventSchema),   committeeController.getByEventId);
 router.get('/:id',            validate(committeeParamSchema), committeeController.getById);
 

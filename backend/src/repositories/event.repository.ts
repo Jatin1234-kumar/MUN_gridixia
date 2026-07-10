@@ -6,12 +6,11 @@ export const eventRepository = {
   findAll() {
     return EventModel.find({ isDeleted: { $ne: true } })
       .sort({ startAt: -1 })
-      .lean()
       .exec();
   },
 
   findById(id: string) {
-    return EventModel.findById(id).lean().exec();
+    return EventModel.findById(id).exec();
   },
 
   create(dto: CreateEventDto) {
@@ -32,7 +31,6 @@ export const eventRepository = {
     if (dto.registrationClosesAt) update.registrationClosesAt = new Date(dto.registrationClosesAt);
 
     return EventModel.findByIdAndUpdate(id, { $set: update }, { new: true, runValidators: true })
-      .lean()
       .exec();
   },
 

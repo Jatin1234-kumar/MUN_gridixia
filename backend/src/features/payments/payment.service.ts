@@ -70,6 +70,7 @@ export const paymentService = {
     }
 
     const fees = computeFees(committee, event, input.couponCode ?? '');
+    console.log('[payment] event.baseFee:', event.baseFee, '| computed fees:', fees);
     const receipt = generateReceipt();
     const order = await createRazorpayOrder({
       amount: toPaise(fees.total),
@@ -173,6 +174,15 @@ export const paymentService = {
     return toPaymentResponse(payment);
   },
 
+  async getPaidEventIds(userId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(userId)) return [];
+    const registrations = await RegistrationModel.find(
+      { userId: new Types.ObjectId(userId), paymentStatus: 'paid' },
+      { eventId: 1 },
+    ).lean().exec();
+    return registrations.map((r) => String(r.eventId));
+  },
+
   async handleWebhook(rawBody: Buffer, signature: string | undefined, eventId?: string) {
     if (!signature || !verifyWebhookSignature(rawBody, signature)) {
       throw new AppError(400, 'Invalid Razorpay webhook signature');
@@ -212,10 +222,10 @@ export const paymentService = {
 
 function computeFees(
   committee: { type: string; capacity: number },
-  event: { type: string },
+  event: { type: string; baseFee?: number },
   couponCode = '',
 ): FeeBreakdown {
-  const baseFee = event.type === 'YOUTH_PARLIAMENT' ? 2800 : 3500;
+  const baseFee = event.baseFee ?? (event.type === 'YOUTH_PARLIAMENT' ? 2800 : 3500);
   const committeeFee = (committee.type === 'MUN' ? 1700 : 1300) + Math.round(committee.capacity * 10);
   const kitFee = 250;
   const serviceFee = 300;

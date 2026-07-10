@@ -39,7 +39,7 @@ const navItems: NavItem[] = [
   { label: 'Certificate Vault', to: '/certificate-vault', icon: Award },
   { label: 'Payments', to: '/payments', icon: CreditCard },
   { label: 'Reports', to: '/reports', icon: FileText, minRole: 'organizer' },
-  { label: 'Settings', to: '/settings', icon: Settings, minRole: 'admin' },
+  { label: 'Settings', to: '/settings', icon: Settings, minRole: 'organizer' },
   { label: 'Monitoring', to: '/monitoring', icon: Activity, minRole: 'admin' },
 ];
 

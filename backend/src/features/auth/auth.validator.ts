@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-const allowedRegistrationRoles = ['participant', 'delegate'] as const;
-
 export const registerSchema = z.object({
   body: z.object({
     firstName: z.string().min(2).max(100),
@@ -13,7 +11,21 @@ export const registerSchema = z.object({
       .max(128)
       .regex(/[A-Z]/, 'Must contain uppercase')
       .regex(/[0-9]/, 'Must contain number'),
-    role: z.enum(allowedRegistrationRoles).optional(),
+  }),
+});
+
+export const createUserSchema = z.object({
+  body: z.object({
+    firstName: z.string().min(2).max(100),
+    lastName: z.string().min(2).max(100),
+    email: z.string().email().max(254),
+    password: z
+      .string()
+      .min(8)
+      .max(128)
+      .regex(/[A-Z]/, 'Must contain uppercase')
+      .regex(/[0-9]/, 'Must contain number'),
+    role: z.enum(['admin', 'organizer']),
   }),
 });
 
@@ -24,8 +36,17 @@ export const loginSchema = z.object({
   }),
 });
 
-export const refreshSchema = z.object({
-  body: z.object({}),
+export const roleRequestSchema = z.object({
+  body: z.object({
+    requestedRole: z.enum(['organizer', 'admin']),
+    reason: z.string().max(500).optional(),
+  }),
+});
+
+export const reviewRoleRequestSchema = z.object({
+  body: z.object({
+    action: z.enum(['approved', 'rejected']),
+  }),
 });
 
 export const logoutSchema = z.object({

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { Link } from 'react-router-dom';
+import api, { getApiErrorMessage } from '@/lib/api';
+import { useAuth } from '@/features/auth/AuthContext';
 import { motion } from 'framer-motion';
 import {
   Award,
@@ -14,19 +16,21 @@ import {
   Globe2,
   Landmark,
   LayoutPanelTop,
-  MapPin,
-  QrCode,
   ShieldCheck,
   Sparkles,
   Ticket,
+  TrendingUp,
   Users,
   Wallet,
+  CalendarCheck,
+  CircleDollarSign,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { LiveCommitteeFeed } from '@/features/dashboard/LiveCommitteeFeed';
 import { useCommittees } from '@/hooks/useCommittees';
 import { useEvents } from '@/hooks/useEvents';
@@ -35,8 +39,221 @@ import { cn, formatDate, formatNumber } from '@/lib/utils';
 import { readJson } from '@/lib/storage';
 import type { Committee, DelegateApplicationDraft, Event, PaymentSession } from '@/types';
 
+type RoleUpgradeStatus = 'idle' | 'loading' | 'success' | 'error';
+
+function RoleUpgradeCard() {
+  const { user } = useAuth();
+  const [reason, setReason] = useState('');
+  const [status, setStatus] = useState<RoleUpgradeStatus>('idle');
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const isOrganizer = user?.role === 'organizer';
+  const requestedRole = isOrganizer ? 'admin' : 'organizer';
+  const cardDescription = isOrganizer
+    ? 'Ask super admin to upgrade your role to admin.'
+    : 'Ask an admin to upgrade your role to organizer.';
+  const buttonLabel = isOrganizer ? 'Request Admin Role' : 'Request Organizer Role';
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus('loading');
+    setErrorMsg('');
+    try {
+      await api.post('/auth/role-requests', { requestedRole, reason: reason || undefined });
+      setStatus('success');
+    } catch (err) {
+      setErrorMsg(getApiErrorMessage(err));
+      setStatus('error');
+    }
+  }
+
+  if (status === 'success') {
+    return (
+      <DataCard title="Role Upgrade Request" description={cardDescription} icon={TrendingUp}>
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          Request submitted. {isOrganizer ? 'Super admin' : 'An admin'} will review it shortly.
+        </div>
+      </DataCard>
+    );
+  }
+
+  return (
+    <DataCard title="Role Upgrade Request" description={cardDescription} icon={TrendingUp}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Textarea
+          placeholder={`Optional: explain why you'd like to become ${isOrganizer ? 'an admin' : 'an organizer'}…`}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          maxLength={500}
+          rows={3}
+          className="resize-none bg-white/[0.02] border-white/[0.08] text-sm"
+        />
+        {status === 'error' && (
+          <p className="text-xs text-red-400">{errorMsg}</p>
+        )}
+        <Button type="submit" size="sm" disabled={status === 'loading'} className="w-full">
+          {status === 'loading' ? 'Submitting…' : buttonLabel}
+        </Button>
+      </form>
+    </DataCard>
+  );
+}
+
 const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
 const paymentSessionKey = 'mun-gridixia:payment-session:v1';
+
+const paymentStatusMeta: Record<string, { label: string; color: string }> = {
+  success:    { label: 'Paid',       color: 'text-emerald-400' },
+  processing: { label: 'Processing', color: 'text-amber-400'   },
+  pending:    { label: 'Pending',    color: 'text-gold-400'    },
+  failed:     { label: 'Failed',     color: 'text-red-400'     },
+};
+
+function EventPaymentCard({
+  events,
+  committees,
+  session,
+}: {
+  events: Event[];
+  committees: Committee[];
+  session: PaymentSession | undefined;
+}) {
+  const [selectedEventId, setSelectedEventId] = useState<string>(
+    () => session?.eventId ?? events[0]?.id ?? '',
+  );
+
+  const selectedEvent = events.find((e) => e.id === selectedEventId);
+
+  // if there's a session for this event, show its data; otherwise show fee preview
+  const matchedSession = session?.eventId === selectedEventId ? session : undefined;
+  const eventCommittees = committees.filter((c) => c.eventId === selectedEventId);
+
+  const baseFee = selectedEvent?.baseFee ?? 0;
+  const statusMeta = matchedSession
+    ? (paymentStatusMeta[matchedSession.status] ?? paymentStatusMeta.pending)
+    : null;
+
+  return (
+    <DataCard title="Event Payment Summary" description="Select an event to view its payment details." icon={CircleDollarSign}>
+      <div className="space-y-4">
+        {/* Event selector */}
+        <select
+          value={selectedEventId}
+          onChange={(e) => setSelectedEventId(e.target.value)}
+          className="flex h-10 w-full rounded-lg border border-white/[0.08] bg-navy-800/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/50"
+        >
+          <option value="">Select an event</option>
+          {events.map((ev) => (
+            <option key={ev.id} value={ev.id}>{ev.name}</option>
+          ))}
+        </select>
+
+        {selectedEvent ? (
+          <div className="space-y-3">
+            {/* Event info */}
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 space-y-1">
+              <div className="flex items-center justify-between">
+                <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Event</p>
+                <CalendarCheck className="h-4 w-4 text-gold-400" />
+              </div>
+              <p className="text-sm font-medium text-foreground">{selectedEvent.name}</p>
+              <p className="text-xs text-muted-foreground">
+                {formatDate(selectedEvent.startAt)} · {selectedEvent.location}
+              </p>
+            </div>
+
+            {/* Payment status if session exists */}
+            {matchedSession ? (
+              <>
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Payment Status</p>
+                    <span className={`text-xs font-semibold ${statusMeta!.color}`}>{statusMeta!.label}</span>
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Committee</span>
+                      <span className="text-foreground">{matchedSession.committeeAbbr} — {matchedSession.committeeName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Base Fee</span>
+                      <span className="text-foreground">₹{formatNumber(matchedSession.baseFee)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Committee Fee</span>
+                      <span className="text-foreground">₹{formatNumber(matchedSession.committeeFee)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Service Fee</span>
+                      <span className="text-foreground">₹{formatNumber(matchedSession.serviceFee)}</span>
+                    </div>
+                    {matchedSession.discount > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Discount</span>
+                        <span className="text-emerald-400">-₹{formatNumber(matchedSession.discount)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Tax</span>
+                      <span className="text-foreground">₹{formatNumber(matchedSession.tax)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-white/[0.06] pt-1.5 font-semibold">
+                      <span className="text-foreground">Total</span>
+                      <span className="text-gold-400">₹{formatNumber(matchedSession.amount)}</span>
+                    </div>
+                  </div>
+                </div>
+                {matchedSession.receiptId && (
+                  <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Receipt</p>
+                      <p className="text-sm font-mono text-foreground mt-0.5">{matchedSession.receiptId}</p>
+                    </div>
+                    <Wallet className="h-4 w-4 text-gold-400" />
+                  </div>
+                )}
+              </>
+            ) : (
+              /* No session — show fee preview + committees */
+              <div className="space-y-3">
+                <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Fee Preview</p>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Base Registration Fee</span>
+                    <span className="text-gold-400 font-semibold">₹{formatNumber(baseFee)}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1">Final amount depends on committee selection.</p>
+                </div>
+                {eventCommittees.length > 0 && (
+                  <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Committees ({eventCommittees.length})</p>
+                    <div className="space-y-1">
+                      {eventCommittees.slice(0, 4).map((c) => (
+                        <div key={c.id} className="flex items-center justify-between text-xs">
+                          <span className="text-foreground">{c.abbr} — {c.name}</span>
+                          <span className={cn(
+                            'text-[10px] uppercase tracking-wider',
+                            c.status === 'open' ? 'text-emerald-400' : c.status === 'full' ? 'text-red-400' : 'text-amber-400',
+                          )}>{c.status}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <Button size="sm" className="w-full" asChild>
+                  <Link to="/payments"><CreditCard size={13} /> Pay for this Event</Link>
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground text-center py-4">Select an event to see payment details.</p>
+        )}
+      </div>
+    </DataCard>
+  );
+}
 
 type DashboardStatus = 'complete' | 'in-progress' | 'pending' | 'attention';
 
@@ -199,6 +416,7 @@ function MetricCardSkeleton() {
 
 export default function Dashboard() {
   useSeo(PAGE_SEO.dashboard);
+  const { user } = useAuth();
   const { data: committees = [], isLoading: committeesLoading } = useCommittees();
   const { data: events = [], isLoading: eventsLoading } = useEvents();
   const [draft, setDraft] = useState<Partial<DelegateApplicationDraft> | undefined>(undefined);
@@ -271,7 +489,6 @@ export default function Dashboard() {
   const countryPortfolio = draft?.countryPreference?.firstChoiceCountry || 'No country selected';
   const eventName = selectedEvent?.name || 'No active event';
   const eventDate = selectedEvent ? formatDate(selectedEvent.date) : 'TBD';
-  const receipt = session?.receiptId || 'Pending';
   const ticketLabel =
     session?.status === 'success'
       ? `Ticket ${session.orderId.slice(-6).toUpperCase()}`
@@ -471,45 +688,15 @@ export default function Dashboard() {
             </div>
           </DataCard>
 
-          <DataCard
-            title="Snapshot"
-            description="Current state pulled from the application and payment session."
-            icon={QrCode}
-          >
-            <div className="space-y-3">
-              <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
-                    Receipt
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{receipt}</p>
-                </div>
-                <Wallet className="h-5 w-5 text-gold-400" />
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
-                    Country Portfolio
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">{countryPortfolio}</p>
-                </div>
-                <MapPin className="h-5 w-5 text-blue-400" />
-              </div>
-              <div className="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.28em] text-muted-foreground">
-                    Delegate Count
-                  </p>
-                  <p className="mt-1 text-sm text-foreground">
-                    {selectedCommittee ? formatNumber(selectedCommittee.delegates ?? 0) : '0'}
-                  </p>
-                </div>
-                <Users className="h-5 w-5 text-emerald-400" />
-              </div>
-            </div>
-          </DataCard>
+          <EventPaymentCard events={events} committees={committees} session={session ?? undefined} />
         </div>
       </div>
+
+      {user && ['guest', 'delegate', 'organizer'].includes(user.role) && (
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <RoleUpgradeCard />
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (

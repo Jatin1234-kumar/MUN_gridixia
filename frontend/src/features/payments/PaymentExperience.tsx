@@ -3,8 +3,14 @@ import type { ComponentType, ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+
+declare global {
+  interface Window {
+    Razorpay?: new (options: Record<string, unknown>) => { open(): void };
+  }
+}
 import {
   AlertTriangle,
   CheckCircle2,
@@ -154,6 +160,20 @@ const defaultValues: PaymentFormValues = {
   consent: false,
 };
 
+const paidEventIdsKey = 'mun-gridixia:paid-event-ids:v1';
+
+function getPaidEventIds(): string[] {
+  try { return JSON.parse(localStorage.getItem(paidEventIdsKey) ?? '[]') as string[]; }
+  catch { return []; }
+}
+
+function addPaidEventId(eventId: string) {
+  const ids = getPaidEventIds();
+  if (!ids.includes(eventId)) {
+    localStorage.setItem(paidEventIdsKey, JSON.stringify([...ids, eventId]));
+  }
+}
+
 function clearPaymentStorage() {
   window.localStorage.removeItem(paymentDraftKey);
   window.localStorage.removeItem(paymentSessionKey);
@@ -175,7 +195,7 @@ function getSeedValues(): Partial<PaymentFormValues> {
 }
 
 function computeFees(committee?: Committee, event?: Event, couponCode = '') {
-  const baseFee = event?.type === 'YOUTH_PARLIAMENT' ? 2800 : 3500;
+  const baseFee = event?.baseFee ?? (event?.type === 'YOUTH_PARLIAMENT' ? 2800 : 3500);
   const committeeFee = committee
     ? (committee.type === 'MUN' ? 1700 : 1300) + Math.round(committee.capacity * 10)
     : 1500;
@@ -410,9 +430,15 @@ function SectionCard({
 }
 
 function useRestoreableSession() {
-  const [session, setSession] = useState<PaymentSession | undefined>(() =>
-    readJson<PaymentSession>(paymentSessionKey),
-  );
+  const [session, setSession] = useState<PaymentSession | undefined>(() => {
+    const saved = readJson<PaymentSession>(paymentSessionKey);
+    // Don't restore a completed session — user is here to make a new payment
+    if (saved?.status === 'success') {
+      clearPaymentStorage();
+      return undefined;
+    }
+    return saved;
+  });
   const [savedDraft, setSavedDraft] = useState<Partial<PaymentFormValues>>(
     () => readJson<Partial<PaymentFormValues>>(paymentDraftKey) ?? {},
   );
@@ -439,6 +465,7 @@ export function PaymentExperience() {
   const { session, setSession, savedDraft, setSavedDraft } = useRestoreableSession();
   const [infoMessage, setInfoMessage] = useState('Ready to create a secure order.');
   const [lastRecoveryAction, setLastRecoveryAction] = useState('');
+  const [formError, setFormError] = useState('');
   const seedValues = useMemo(() => getSeedValues(), []);
 
   const form = useForm<PaymentFormValues>({
@@ -471,6 +498,25 @@ export function PaymentExperience() {
       window.localStorage.setItem(`${paymentSessionKey}:locked`, session.orderId);
     }
   }, [session]);
+
+  const { data: serverPaidEventIds = [] } = useQuery<string[]>({
+    queryKey: ['paid-event-ids'],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: string[] }>('/payments/paid-event-ids');
+      return data.data;
+    },
+    staleTime: 30_000,
+  });
+
+  const paidEventIds = useMemo(() => {
+    const local = getPaidEventIds();
+    const merged = new Set([...serverPaidEventIds, ...local]);
+    return merged;
+  }, [serverPaidEventIds]);
+
+  const availableCommittees = committees.filter(
+    (c: Committee) => !paidEventIds.has(c.eventId),
+  );
 
   const selectedCommittee =
     committees.find((committee: Committee) => committee.id === committeeId) ??
@@ -576,6 +622,9 @@ export function PaymentExperience() {
     onSuccess: (result) => {
       setSession(result);
       writeJson(paymentSessionKey, result);
+      if (result.status === 'success') {
+        addPaidEventId(result.eventId);
+      }
       setInfoMessage(
         result.status === 'success'
           ? 'Payment verified successfully. Registration is now confirmed.'
@@ -600,20 +649,23 @@ export function PaymentExperience() {
     },
   });
 
-  const onSubmit = form.handleSubmit(async (values) => {
-    if (hasActiveLock) {
-      setInfoMessage(
-        'A payment order is already active. Resume the saved session to avoid duplicate orders.',
-      );
-      return;
-    }
-
-    try {
-      await paymentMutation.mutateAsync(values);
-    } catch {
-      // onError owns the user-facing state for checkout dismissals and verification failures.
-    }
-  });
+  const onSubmit = form.handleSubmit(
+    async (values) => {
+      setFormError('');
+      if (hasActiveLock) {
+        setInfoMessage('A payment order is already active. Resume the saved session to avoid duplicate orders.');
+        return;
+      }
+      try {
+        await paymentMutation.mutateAsync(values);
+      } catch {
+        // onError owns the user-facing state for checkout dismissals and verification failures.
+      }
+    },
+    () => {
+      setFormError('Please fill in all required fields and check the consent checkbox.');
+    },
+  );
 
   const resumeSavedSession = () => {
     if (!session) return;
@@ -668,6 +720,70 @@ export function PaymentExperience() {
     setLastRecoveryAction('Started fresh');
   };
 
+  if (session?.status === 'success') {
+    return (
+      <div className="space-y-6 pb-8">
+        <PageHeader
+          title="Payment Experience"
+          subtitle="Registration summary, fee breakdown, payment status, and recovery in one place"
+          actions={
+            <Button asChild variant="outline" size="sm">
+              <Link to="/delegates">
+                Back to application
+                <ChevronRight size={14} />
+              </Link>
+            </Button>
+          }
+        />
+        <Card className="glass-card border-emerald-500/20 bg-emerald-500/5">
+          <CardHeader className="space-y-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-emerald-500/30 bg-emerald-500/10">
+              <CheckCircle2 className="h-7 w-7 text-emerald-400" />
+            </div>
+            <div>
+              <CardTitle className="text-xl text-emerald-200">Payment Successful</CardTitle>
+              <CardDescription className="text-emerald-100/70">
+                Your registration is confirmed. No further action needed.
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-emerald-100/80">
+            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 space-y-2">
+              <div className="flex justify-between">
+                <span className="text-emerald-100/60">Receipt</span>
+                <span className="font-mono">{session.receiptId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-100/60">Order ID</span>
+                <span className="font-mono">{session.orderId}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-100/60">Committee</span>
+                <span>{session.committeeAbbr} — {session.committeeName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-emerald-100/60">Event</span>
+                <span>{session.eventName}</span>
+              </div>
+              <div className="flex justify-between font-semibold border-t border-emerald-500/20 pt-2">
+                <span className="text-emerald-100/60">Amount Paid</span>
+                <span className="text-emerald-300">₹{session.amount.toLocaleString()}</span>
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter className="flex gap-3">
+            <Button asChild variant="outline" className="flex-1">
+              <Link to="/dashboard">Go to Dashboard</Link>
+            </Button>
+            <Button asChild className="flex-1">
+              <Link to="/delegates">View Application</Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 pb-8">
       <PageHeader
@@ -705,7 +821,7 @@ export function PaymentExperience() {
                 label="Event"
                 value={
                   selectedEvent
-                    ? `${selectedEvent.name} • ${formatDate(selectedEvent.date)}`
+                    ? `${selectedEvent.name} • ${formatDate(selectedEvent.startAt)}`
                     : 'Auto-linked to committee'
                 }
               />
@@ -742,7 +858,7 @@ export function PaymentExperience() {
                 className="flex h-10 w-full rounded-lg border border-white/[0.08] bg-navy-800/60 px-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-gold-500/50"
               >
                 <option value="">Select committee</option>
-                {committees.map((committee) => (
+                {availableCommittees.map((committee) => (
                   <option key={committee.id} value={committee.id}>
                     {committee.abbr} - {committee.name}
                   </option>
@@ -762,32 +878,40 @@ export function PaymentExperience() {
               />
               <ValueRow
                 label="Event Date"
-                value={selectedEvent ? formatDate(selectedEvent.date) : '—'}
+                value={selectedEvent ? formatDate(selectedEvent.startAt) : '—'}
               />
             </div>
           </SectionCard>
 
           <SectionCard
             title="Fee Breakdown"
-            description="Transparent fee calculation that updates when committee or coupon changes."
+            description="Calculated based on your selected committee and event."
             icon={CreditCard}
           >
-            <div className="space-y-2">
-              <ValueRow label="Base Registration" value={formatNumber(fees.baseFee)} />
-              <ValueRow label="Committee Allocation" value={formatNumber(fees.committeeFee)} />
-              <ValueRow label="Delegate Kit" value={formatNumber(fees.kitFee)} />
-              <ValueRow label="Gateway Fee" value={formatNumber(fees.serviceFee)} />
-              <ValueRow label="Discount" value={`-${formatNumber(fees.discount)}`} />
-              <ValueRow label="Tax" value={formatNumber(fees.tax)} />
-            </div>
+            {!selectedCommittee || !selectedEvent ? (
+              <p className="text-sm text-muted-foreground py-2">Select a committee above to see the fee breakdown.</p>
+            ) : (
+              <>
+                <div className="space-y-2">
+                  <ValueRow label="Base Registration" value={`₹${fees.baseFee.toLocaleString()}`} />
+                  <ValueRow label={`Committee Fee (${selectedCommittee.abbr})`} value={`₹${fees.committeeFee.toLocaleString()}`} />
+                  <ValueRow label="Delegate Kit" value={`₹${fees.kitFee.toLocaleString()}`} />
+                  <ValueRow label="Gateway Fee" value={`₹${fees.serviceFee.toLocaleString()}`} />
+                  {fees.discount > 0 && (
+                    <ValueRow label="Discount" value={`-₹${fees.discount.toLocaleString()}`} />
+                  )}
+                  <ValueRow label="GST (18%)" value={`₹${fees.tax.toLocaleString()}`} />
+                </div>
 
-            <div className="flex items-center justify-between rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.28em] text-gold-300">Total Due</p>
-                <p className="text-sm text-gold-100">Including taxes and processing</p>
-              </div>
-              <p className="text-2xl font-semibold text-gold-300">{formatNumber(fees.total)}</p>
-            </div>
+                <div className="flex items-center justify-between rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.28em] text-gold-300">Total Due</p>
+                    <p className="text-sm text-gold-100">Including taxes and processing</p>
+                  </div>
+                  <p className="text-2xl font-semibold text-gold-300">₹{fees.total.toLocaleString()}</p>
+                </div>
+              </>
+            )}
           </SectionCard>
 
           <SectionCard
@@ -863,6 +987,9 @@ export function PaymentExperience() {
                 <ShieldCheck size={13} className="text-gold-400" />
                 <span>{infoMessage}</span>
               </div>
+              {formError && (
+                <p className="text-xs text-red-400 w-full">{formError}</p>
+              )}
               <Button
                 onClick={onSubmit}
                 disabled={paymentMutation.isPending || hasActiveLock}

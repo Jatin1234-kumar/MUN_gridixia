@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -7,6 +7,7 @@ import {
   Award,
   BarChart3,
   CalendarCheck,
+  Check,
   ChevronRight,
   CircleDollarSign,
   LayoutList,
@@ -16,9 +17,12 @@ import {
   ScanLine,
   Search,
   ShieldCheck,
+  TrendingUp,
   Users,
+  X,
   Zap,
 } from 'lucide-react';
+import api, { getApiErrorMessage } from '@/lib/api';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { StatCard } from '@/components/shared/StatCard';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
@@ -321,6 +325,109 @@ function QuickStat({
         <p className="text-sm font-semibold text-foreground tabular-nums">{value}</p>
       </div>
     </div>
+  );
+}
+
+// ─── Role Requests Panel ────────────────────────────────────────────────────
+
+interface RoleRequest {
+  id: string;
+  userId: { id: string; firstName: string; lastName: string; email: string; role: string } | string;
+  requestedRole: string;
+  reason?: string;
+  status: string;
+  createdAt: string;
+}
+
+function RoleRequestsPanel() {
+  const [requests, setRequests] = useState<RoleRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  async function fetchRequests() {
+    setLoading(true);
+    setError('');
+    try {
+      const { data } = await api.get<{ data: RoleRequest[] }>('/auth/role-requests', { params: { status: 'pending' } });
+      setRequests(data.data);
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { fetchRequests(); }, []);
+
+  async function handleAction(requestId: string, action: 'approved' | 'rejected') {
+    setActionLoading(requestId + action);
+    try {
+      await api.patch(`/auth/role-requests/${requestId}`, { action });
+      setRequests((prev) => prev.filter((r) => r.id !== requestId));
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setActionLoading(null);
+    }
+  }
+
+  return (
+    <ChartCard title="Role Upgrade Requests" description="Pending requests from delegates and guests" icon={TrendingUp}>
+      {loading ? (
+        <div className="flex h-24 items-center justify-center">
+          <LoadingSpinner size="sm" />
+        </div>
+      ) : error ? (
+        <p className="text-xs text-red-400 py-4">{error}</p>
+      ) : requests.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-4 text-center">No pending role requests.</p>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((req) => {
+            const user = typeof req.userId === 'object' ? req.userId : null;
+            return (
+              <div
+                key={req.id}
+                className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">
+                    {user ? `${user.firstName} ${user.lastName}` : 'Unknown user'}
+                  </p>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {user?.email} &middot; currently <span className="text-gold-400">{user?.role ?? '—'}</span> &rarr; <span className="text-emerald-400">{req.requestedRole}</span>
+                  </p>
+                  {req.reason && (
+                    <p className="mt-1 text-xs text-muted-foreground/70 italic">&ldquo;{req.reason}&rdquo;</p>
+                  )}
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                    disabled={!!actionLoading}
+                    onClick={() => handleAction(req.id, 'approved')}
+                  >
+                    {actionLoading === req.id + 'approved' ? '…' : <Check size={13} />}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 px-2 text-red-400 border-red-500/30 hover:bg-red-500/10"
+                    disabled={!!actionLoading}
+                    onClick={() => handleAction(req.id, 'rejected')}
+                  >
+                    {actionLoading === req.id + 'rejected' ? '…' : <X size={13} />}
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </ChartCard>
   );
 }
 
@@ -639,6 +746,11 @@ export default function CommandCenter() {
             </div>
           </CardContent>
         </Card>
+      </div>
+
+      {/* ── Role Requests ────────────────────────────────────────────────── */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <RoleRequestsPanel />
       </div>
 
       {/* ── Quick Stats Bar ─────────────────────────────────────────────── */}

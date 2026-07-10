@@ -45,6 +45,12 @@ export const paymentController = {
     res.json({ data: result });
   }),
 
+  getPaidEventIds: asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const eventIds = await paymentService.getPaidEventIds(authReq.user.sub);
+    res.json({ data: eventIds });
+  }),
+
   webhook: asyncHandler(async (req, res) => {
     if (!Buffer.isBuffer(req.body)) {
       throw new AppError(400, 'Webhook body must be raw JSON');

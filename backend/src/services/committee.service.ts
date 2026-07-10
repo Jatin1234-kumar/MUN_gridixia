@@ -5,6 +5,10 @@ import type { CreateCommitteeDto, UpdateCommitteeDto } from '../validators/commi
 import { AppError } from '../utils/AppError';
 
 export const committeeService = {
+  async getAll() {
+    return committeeRepository.findAll();
+  },
+
   async getByEventId(eventId: string) {
     if (!Types.ObjectId.isValid(eventId)) throw new AppError(400, 'Invalid event ID');
     return committeeRepository.findByEventId(eventId);

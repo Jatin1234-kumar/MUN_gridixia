@@ -15,6 +15,7 @@ export const createEventSchema = z.object({
       location: z.string().min(2).max(255),
       timezone: z.string().min(2).max(100).default('UTC'),
       capacity: z.number().int().min(1).max(100000),
+      baseFee: z.number().min(0).default(3500),
       registrationOpensAt: z.string().datetime().optional().nullable(),
       registrationClosesAt: z.string().datetime().optional().nullable(),
       featuredImageUrl: z.string().max(2048).optional().nullable(),
