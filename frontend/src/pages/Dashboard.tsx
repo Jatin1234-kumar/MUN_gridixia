@@ -42,16 +42,24 @@ import type { Committee, DelegateApplicationDraft, Event, PaymentSession } from 
 type RoleUpgradeStatus = 'idle' | 'loading' | 'success' | 'error';
 
 function RoleUpgradeCard() {
+  const { user } = useAuth();
   const [reason, setReason] = useState('');
   const [status, setStatus] = useState<RoleUpgradeStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+
+  const isOrganizer = user?.role === 'organizer';
+  const requestedRole = isOrganizer ? 'admin' : 'organizer';
+  const cardDescription = isOrganizer
+    ? 'Ask super admin to upgrade your role to admin.'
+    : 'Ask an admin to upgrade your role to organizer.';
+  const buttonLabel = isOrganizer ? 'Request Admin Role' : 'Request Organizer Role';
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setStatus('loading');
     setErrorMsg('');
     try {
-      await api.post('/auth/role-requests', { requestedRole: 'organizer', reason: reason || undefined });
+      await api.post('/auth/role-requests', { requestedRole, reason: reason || undefined });
       setStatus('success');
     } catch (err) {
       setErrorMsg(getApiErrorMessage(err));
@@ -61,20 +69,20 @@ function RoleUpgradeCard() {
 
   if (status === 'success') {
     return (
-      <DataCard title="Role Upgrade Request" description="Request to become an organizer." icon={TrendingUp}>
+      <DataCard title="Role Upgrade Request" description={cardDescription} icon={TrendingUp}>
         <div className="flex items-center gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
           <CheckCircle2 className="h-4 w-4 shrink-0" />
-          Request submitted. An admin will review it shortly.
+          Request submitted. {isOrganizer ? 'Super admin' : 'An admin'} will review it shortly.
         </div>
       </DataCard>
     );
   }
 
   return (
-    <DataCard title="Role Upgrade Request" description="Ask an admin to upgrade your role to organizer." icon={TrendingUp}>
+    <DataCard title="Role Upgrade Request" description={cardDescription} icon={TrendingUp}>
       <form onSubmit={handleSubmit} className="space-y-3">
         <Textarea
-          placeholder="Optional: explain why you'd like to become an organizer…"
+          placeholder={`Optional: explain why you'd like to become ${isOrganizer ? 'an admin' : 'an organizer'}…`}
           value={reason}
           onChange={(e) => setReason(e.target.value)}
           maxLength={500}
@@ -85,7 +93,7 @@ function RoleUpgradeCard() {
           <p className="text-xs text-red-400">{errorMsg}</p>
         )}
         <Button type="submit" size="sm" disabled={status === 'loading'} className="w-full">
-          {status === 'loading' ? 'Submitting…' : 'Request Organizer Role'}
+          {status === 'loading' ? 'Submitting…' : buttonLabel}
         </Button>
       </form>
     </DataCard>
@@ -569,7 +577,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {user && ['guest', 'delegate'].includes(user.role) && (
+      {user && ['guest', 'delegate', 'organizer'].includes(user.role) && (
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <RoleUpgradeCard />
         </div>

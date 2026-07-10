@@ -39,11 +39,14 @@ export const AuthRepository = {
   },
 
   listRoleRequests(filter: { status?: string; requestedRole?: string } = {}) {
-    return RoleRequestModel.find(filter).populate('userId', 'firstName lastName email role').sort({ createdAt: -1 }).exec();
+    const query: Record<string, string> = {};
+    if (filter.status) query.status = filter.status;
+    if (filter.requestedRole) query.requestedRole = filter.requestedRole;
+    return RoleRequestModel.find(query).populate('userId', 'firstName lastName email role').sort({ createdAt: -1 }).exec();
   },
 
   findRoleRequestById(id: string | Types.ObjectId) {
-    return RoleRequestModel.findById(id).populate('userId', 'firstName lastName email role').exec();
+    return RoleRequestModel.findById(id).exec();
   },
 
   updateRoleRequestStatus(

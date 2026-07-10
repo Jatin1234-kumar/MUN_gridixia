@@ -250,7 +250,11 @@ export const AuthService = {
     return { requestId, action };
   },
 
-  async listRoleRequests(filter: { status?: string; requestedRole?: string } = {}) {
+  async listRoleRequests(filter: { status?: string; requestedRole?: string } = {}, viewerRole?: UserRole) {
+    // admin can only see organizer requests; super_admin sees all
+    if (viewerRole === 'admin') {
+      filter = { ...filter, requestedRole: 'organizer' };
+    }
     return AuthRepository.listRoleRequests(filter);
   },
 

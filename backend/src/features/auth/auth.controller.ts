@@ -60,8 +60,9 @@ export const reviewRoleRequest = asyncHandler(async (req, res) => {
 });
 
 export const listRoleRequests = asyncHandler(async (req, res) => {
+  const actor = (req as AuthenticatedRequest).user;
   const { status, requestedRole } = req.query as { status?: string; requestedRole?: string };
-  const requests = await AuthService.listRoleRequests({ status, requestedRole });
+  const requests = await AuthService.listRoleRequests({ status, requestedRole }, actor.role);
   res.json({ data: requests });
 });
 

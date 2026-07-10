@@ -1,11 +1,14 @@
 import { useState } from 'react';
-import { Settings as SettingsIcon, Building2, Bell, Shield, Save, Check } from 'lucide-react';
+import { Settings as SettingsIcon, Building2, Bell, Shield, Save, Check, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { useAuth } from '@/features/auth/AuthContext';
+import api, { getApiErrorMessage } from '@/lib/api';
 
 interface ToggleItem {
   label: string;
@@ -39,7 +42,81 @@ function Toggle({ item, onToggle }: { item: ToggleItem; onToggle: () => void }) 
   );
 }
 
-export default function Settings() {
+function RoleUpgradeCard() {
+  const { user } = useAuth();
+  const [reason, setReason] = useState('');
+  const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [message, setMessage] = useState('');
+
+  if (user?.role !== 'organizer') return null;
+
+  async function handleSubmit() {
+    setStatus('loading');
+    setMessage('');
+    try {
+      await api.post('/auth/role-requests', { requestedRole: 'admin', reason });
+      setStatus('success');
+      setMessage('Your request has been submitted and is pending super admin review.');
+      setReason('');
+    } catch (err) {
+      setStatus('error');
+      setMessage(getApiErrorMessage(err));
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+      className="lg:col-span-2"
+    >
+      <Card className="glass-card overflow-hidden border-white/[0.08]">
+        <CardHeader className="space-y-3 border-b border-white/[0.06] bg-white/[0.015]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gold-500/20 bg-gold-500/10 text-gold-400">
+              <TrendingUp className="h-4 w-4" />
+            </div>
+            <div>
+              <CardTitle className="text-base text-foreground">Request Admin Role</CardTitle>
+              <CardDescription>Submit a request to be upgraded to admin — reviewed by super admin</CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-5 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="reason" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+              Reason (optional)
+            </Label>
+            <Textarea
+              id="reason"
+              placeholder="Briefly explain why you need admin access..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              maxLength={500}
+              rows={3}
+              disabled={status === 'loading' || status === 'success'}
+            />
+          </div>
+          {message && (
+            <p className={`text-xs ${status === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+              {message}
+            </p>
+          )}
+          <Button
+            size="sm"
+            onClick={handleSubmit}
+            disabled={status === 'loading' || status === 'success'}
+          >
+            {status === 'loading' ? 'Submitting...' : status === 'success' ? <><Check size={13} /> Request Sent</> : 'Submit Request'}
+          </Button>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+
   const [saved, setSaved] = useState(false);
   const [orgName, setOrgName] = useState('MUN Gridixia');
   const [contactEmail, setContactEmail] = useState('admin@mungridixia.org');
@@ -217,6 +294,8 @@ export default function Settings() {
             </CardContent>
           </Card>
         </motion.div>
+
+        <RoleUpgradeCard />
       </div>
     </div>
   );
