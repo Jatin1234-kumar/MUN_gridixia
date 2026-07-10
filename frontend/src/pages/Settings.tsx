@@ -117,6 +117,7 @@ function RoleUpgradeCard() {
 }
 
 
+export default function Settings() {
   const [saved, setSaved] = useState(false);
   const [orgName, setOrgName] = useState('MUN Gridixia');
   const [contactEmail, setContactEmail] = useState('admin@mungridixia.org');
