@@ -12,6 +12,7 @@ export interface Event {
   location: string;
   description: string;
   capacity: number;
+  baseFee: number;
   isPublic: boolean;
   delegateCount?: number;
   createdAt: string;

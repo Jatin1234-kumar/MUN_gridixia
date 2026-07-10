@@ -145,6 +145,10 @@ function EventDetailModal({ event, onClose }: { event: Event; onClose: () => voi
               <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Registered</p>
               <p className="text-sm text-foreground mt-1">{event.delegateCount ?? 0} delegates</p>
             </div>
+            <div className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">Base Fee</p>
+              <p className="text-sm text-foreground mt-1">₹{event.baseFee?.toLocaleString('en-IN') ?? '—'}</p>
+            </div>
           </div>
 
           <Button

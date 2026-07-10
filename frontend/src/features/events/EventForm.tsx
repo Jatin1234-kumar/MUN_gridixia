@@ -20,6 +20,7 @@ const eventSchema = z
     location: z.string().min(2, 'Min 2 characters').max(255),
     timezone: z.string().min(2).max(100).default('UTC'),
     capacity: z.coerce.number().int().min(1, 'Min 1').max(100000),
+    baseFee: z.coerce.number().min(0, 'Must be 0 or more').default(3500),
     isPublic: z.boolean().default(true),
   })
   .refine((d) => new Date(d.endAt).getTime() > new Date(d.startAt).getTime(), {
@@ -43,7 +44,7 @@ export function EventForm({ onSubmit, isLoading }: EventFormProps) {
     formState: { errors },
   } = useForm<EventFormValues>({
     resolver: zodResolver(eventSchema),
-    defaultValues: { type: 'MUN', timezone: 'UTC', isPublic: true, capacity: 100 },
+    defaultValues: { type: 'MUN', timezone: 'UTC', isPublic: true, capacity: 100, baseFee: 3500 },
   });
 
   // Auto-generate slug from name
@@ -111,12 +112,20 @@ export function EventForm({ onSubmit, isLoading }: EventFormProps) {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
-          <Label htmlFor="startAt">Start Date & Time</Label>
+          <Label htmlFor="baseFee">Base Registration Fee (₹)</Label>
+          <Input id="baseFee" type="number" min={0} step={1} {...register('baseFee')} />
+          {errors.baseFee && <p className="text-xs text-red-400">{errors.baseFee.message}</p>}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor="startAt">Start Date &amp; Time</Label>
           <Input id="startAt" type="datetime-local" {...register('startAt')} />
           {errors.startAt && <p className="text-xs text-red-400">{errors.startAt.message}</p>}
         </div>
         <div className="space-y-1.5">
-          <Label htmlFor="endAt">End Date & Time</Label>
+          <Label htmlFor="endAt">End Date &amp; Time</Label>
           <Input id="endAt" type="datetime-local" {...register('endAt')} />
           {errors.endAt && <p className="text-xs text-red-400">{errors.endAt.message}</p>}
         </div>
