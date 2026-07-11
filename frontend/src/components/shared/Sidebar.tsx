@@ -26,6 +26,7 @@ interface NavItem {
   to: string;
   icon: typeof LayoutDashboard;
   minRole?: 'organizer' | 'admin' | 'super_admin';
+  maxRole?: 'guest' | 'delegate' | 'staff' | 'organizer' | 'admin';
 }
 
 const navItems: NavItem[] = [
@@ -33,7 +34,7 @@ const navItems: NavItem[] = [
   { label: 'Command Center', to: '/command-center', icon: Shield, minRole: 'organizer' },
   { label: 'Events', to: '/events', icon: Calendar },
   { label: 'Committees', to: '/committees', icon: Building2 },
-  { label: 'Delegates', to: '/delegates', icon: Users },
+  { label: 'Delegates', to: '/delegates', icon: Users, maxRole: 'staff' },
   { label: 'Country Allocation', to: '/country-allocation', icon: MapPinned, minRole: 'organizer' },
   { label: 'Check-In Scanner', to: '/check-in', icon: ScanLine },
   { label: 'Certificate Vault', to: '/certificate-vault', icon: Award },
@@ -49,12 +50,13 @@ interface SidebarProps {
 }
 
 export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
-  const { user, hasMinimumRole, logout } = useAuth();
+  const { user, hasRole, hasMinimumRole, logout } = useAuth();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
   const visibleItems = navItems.filter((item) => {
-    if (!item.minRole) return true;
-    return hasMinimumRole(item.minRole);
+    if (item.minRole && !hasMinimumRole(item.minRole)) return false;
+    if (item.maxRole && hasMinimumRole(item.maxRole) && !hasRole(item.maxRole)) return false;
+    return true;
   });
 
   return (
