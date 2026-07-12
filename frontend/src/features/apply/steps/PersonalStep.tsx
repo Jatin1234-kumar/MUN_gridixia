@@ -13,15 +13,16 @@ const GENDER_OPTIONS = [
 
 interface Props {
   defaultValues?: Partial<PersonalData>;
+  emailFallback?: string;
   onNext: (data: PersonalData) => void;
   savedAt?: string;
   direction: 1 | -1;
 }
 
-export function PersonalStep({ defaultValues, onNext, savedAt, direction }: Props) {
+export function PersonalStep({ defaultValues, emailFallback, onNext, savedAt, direction }: Props) {
   const { register, handleSubmit, formState: { errors } } = useForm<PersonalData>({
     resolver: zodResolver(personalSchema),
-    defaultValues: defaultValues ?? {},
+    defaultValues: defaultValues ?? (emailFallback ? { email: emailFallback } : {}),
     mode: 'onBlur',
   });
 

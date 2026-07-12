@@ -21,11 +21,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDate } from '@/lib/utils';
 import { readJson } from '@/lib/storage';
+import { useAuth } from '@/features/auth/AuthContext';
 import type { DelegateApplicationDraft, PaymentSession } from '@/types';
 
-const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
-const paymentSessionKey = 'mun-gridixia:payment-session:v1';
-const checkInLedgerKey = 'mun-gridixia:checkin-ledger:v1';
+const delegateDraftKey  = (uid: string) => `mun-gridixia:delegate-application-draft:v1:${uid}`;
+const paymentSessionKey = (uid: string) => `mun-gridixia:payment-session:v1:${uid}`;
+const checkInLedgerKey  = (uid: string) => `mun-gridixia:checkin-ledger:v1:${uid}`;
 
 type PassState = {
   draft?: Partial<DelegateApplicationDraft>;
@@ -34,24 +35,24 @@ type PassState = {
 
 type PassStatus = 'valid' | 'pending' | 'used' | 'expired';
 
-function usePassState() {
+function usePassState(uid: string) {
   const [state, setState] = useState<PassState | null>(null);
 
   useEffect(() => {
     setState({
-      draft: readJson<DelegateApplicationDraft>(delegateDraftKey),
-      session: readJson<PaymentSession>(paymentSessionKey),
+      draft: readJson<DelegateApplicationDraft>(delegateDraftKey(uid)),
+      session: readJson<PaymentSession>(paymentSessionKey(uid)),
     });
-  }, []);
+  }, [uid]);
 
   return state;
 }
 
-function getPassStatus(session?: PaymentSession): PassStatus {
+function getPassStatus(uid: string, session?: PaymentSession): PassStatus {
   if (!session?.orderId || !session?.committeeName) return 'pending';
   if (session.status !== 'success') return 'pending';
 
-  const ledger = readJson<Record<string, unknown>>(checkInLedgerKey) ?? {};
+  const ledger = readJson<Record<string, unknown>>(checkInLedgerKey(uid)) ?? {};
   const ticket = `DP-${session.orderId.slice(-8).toUpperCase()}`;
   if (ledger[ticket]) return 'used';
 
@@ -118,7 +119,9 @@ function AllocationField({
 }
 
 export default function DelegatePass() {
-  const state = usePassState();
+  const { user } = useAuth();
+  const uid = user?.id ?? 'anonymous';
+  const state = usePassState(uid);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const ticket = useMemo(() => {
@@ -132,7 +135,7 @@ export default function DelegatePass() {
     state?.draft?.committeePreference?.preferredCommitteeName ||
     'Awaiting committee';
   const delegateName =
-    state?.session?.applicantName || state?.draft?.personal?.fullName || 'Delegate Pending';
+    state?.session?.applicantName || state?.draft?.personal?.fullName || user?.email || 'Delegate Pending';
   const allocationDate = state?.session?.createdAt || new Date().toISOString();
   const qrValue = [ticket, committee, country, delegateName].join('|');
 
@@ -141,7 +144,7 @@ export default function DelegatePass() {
     !state?.session?.orderId ||
     !state?.session?.committeeName ||
     !state?.draft?.countryPreference?.firstChoiceCountry;
-  const passStatus = getPassStatus(state?.session);
+  const passStatus = getPassStatus(uid, state?.session);
   const statusConfig = passStatusConfig[passStatus];
 
   const handlePrint = () => {

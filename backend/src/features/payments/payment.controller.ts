@@ -58,6 +58,18 @@ export const paymentController = {
     res.json({ data: eventIds });
   }),
 
+  getMyRegistrationStatus: asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const result = await paymentService.getMyRegistrationStatus(authReq.user.sub);
+    res.json({ data: result });
+  }),
+
+  getMyVaultStatus: asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const result = await paymentService.getMyVaultStatus(authReq.user.sub);
+    res.json({ data: result });
+  }),
+
   webhook: asyncHandler(async (req, res) => {
     if (!Buffer.isBuffer(req.body)) {
       throw new AppError(400, 'Webhook body must be raw JSON');

@@ -100,8 +100,8 @@ function RoleUpgradeCard() {
   );
 }
 
-const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
-const paymentSessionKey = 'mun-gridixia:payment-session:v1';
+const delegateDraftKey = (userId: string) => `mun-gridixia:delegate-application-draft:v1:${userId}`;
+const paymentSessionKey = (userId: string) => `mun-gridixia:payment-session:v1:${userId}`;
 
 const paymentStatusMeta: Record<string, { label: string; color: string }> = {
   success:    { label: 'Paid',       color: 'text-emerald-400' },
@@ -423,9 +423,14 @@ export default function Dashboard() {
   const [session, setSession] = useState<PaymentSession | undefined>(undefined);
 
   useEffect(() => {
-    setDraft(readJson<DelegateApplicationDraft>(delegateDraftKey));
-    setSession(readJson<PaymentSession>(paymentSessionKey));
-  }, []);
+    if (!user?.id) {
+      setDraft(undefined);
+      setSession(undefined);
+      return;
+    }
+    setDraft(readJson<DelegateApplicationDraft>(delegateDraftKey(user.id)));
+    setSession(readJson<PaymentSession>(paymentSessionKey(user.id)));
+  }, [user?.id]);
 
   const selectedCommittee = useMemo(() => {
     const committeeId = draft?.committeePreference?.preferredCommitteeId ?? session?.committeeId;

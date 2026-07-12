@@ -4,9 +4,11 @@ import type { ComponentType, ReactNode } from 'react';
 import { useForm, useWatch, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { useAuth } from '@/features/auth/AuthContext';
+import api from '@/lib/api';
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,6 +18,7 @@ import {
   GraduationCap,
   Globe2,
   LayoutList,
+  Lock,
   MapPin,
   NotebookText,
   ShieldCheck,
@@ -42,7 +45,30 @@ import { useCommittees } from '@/hooks/useCommittees';
 import { useEvents } from '@/hooks/useEvents';
 import type { Committee, Event, DelegateApplicationDraft } from '@/types';
 
-const draftStorageKey = 'mun-gridixia:delegate-application-draft:v1';
+interface RegistrationStatus {
+  registrationNumber: string;
+  status: string;
+  paymentStatus: string;
+  committeeId: string | null;
+  eventId: string;
+  isConfirmed: boolean;
+}
+
+function useMyRegistrationStatus() {
+  return useQuery<RegistrationStatus | null>({
+    queryKey: ['my-registration-status'],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: RegistrationStatus | null }>(
+        '/payments/my-registration-status',
+      );
+      return data.data;
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+const draftStorageKey = (uid: string) => `mun-gridixia:delegate-application-draft:v1:${uid}`;
 
 const applicationSchema = z.object({
   personal: z.object({
@@ -161,13 +187,11 @@ const stepFields: Record<StepKey, FieldPath<ApplicationFormValues>[]> = {
   payment: ['payment.paymentMethod', 'payment.billingName', 'payment.couponCode'],
 };
 
-function loadDraft(): ApplicationFormValues | undefined {
+function loadDraft(uid: string): ApplicationFormValues | undefined {
   if (typeof window === 'undefined') return undefined;
-
   try {
-    const raw = window.localStorage.getItem(draftStorageKey);
+    const raw = window.localStorage.getItem(draftStorageKey(uid));
     if (!raw) return undefined;
-
     const parsed = JSON.parse(raw) as Partial<DelegateApplicationDraft>;
     return { ...defaultValues, ...parsed } as ApplicationFormValues;
   } catch {
@@ -175,14 +199,14 @@ function loadDraft(): ApplicationFormValues | undefined {
   }
 }
 
-function saveDraft(values: Partial<ApplicationFormValues>) {
-  window.localStorage.setItem(draftStorageKey, JSON.stringify(values));
-  window.localStorage.setItem(`${draftStorageKey}:savedAt`, new Date().toISOString());
+function saveDraft(uid: string, values: Partial<ApplicationFormValues>) {
+  window.localStorage.setItem(draftStorageKey(uid), JSON.stringify(values));
+  window.localStorage.setItem(`${draftStorageKey(uid)}:savedAt`, new Date().toISOString());
 }
 
-function clearDraft() {
-  window.localStorage.removeItem(draftStorageKey);
-  window.localStorage.removeItem(`${draftStorageKey}:savedAt`);
+function clearDraft(uid: string) {
+  window.localStorage.removeItem(draftStorageKey(uid));
+  window.localStorage.removeItem(`${draftStorageKey(uid)}:savedAt`);
 }
 
 function FieldError({ message }: { message?: string }) {
@@ -285,17 +309,29 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 
 export function DelegateForm() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const uid = user?.id ?? 'anonymous';
+  const { data: regStatus, isLoading: regStatusLoading } = useMyRegistrationStatus();
+  const isConfirmed = regStatus?.isConfirmed ?? false;
   const { data: committees = [] } = useCommittees();
   const { data: events = [] } = useEvents();
-  const loadedDraft = useMemo(() => loadDraft(), []);
+  // Re-derive the draft whenever the logged-in user changes
+  const loadedDraft = useMemo(() => {
+    const draft = loadDraft(uid);
+    // If no draft exists for this user, seed the email from the auth context
+    if (!draft && user?.email) {
+      return { ...defaultValues, personal: { ...defaultValues.personal, email: user.email } };
+    }
+    return draft;
+  }, [uid, user?.email]);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [statusMessage, setStatusMessage] = useState('Draft ready to autosave locally.');
   const [submittedPayload, setSubmittedPayload] = useState<ApplicationFormValues | null>(null);
 
   useEffect(() => {
-    setSavedAt(window.localStorage.getItem(`${draftStorageKey}:savedAt`));
-  }, []);
+    setSavedAt(window.localStorage.getItem(`${draftStorageKey(uid)}:savedAt`));
+  }, [uid]);
 
   const form = useForm<ApplicationFormValues>({
     resolver: zodResolver(applicationSchema),
@@ -304,25 +340,25 @@ export function DelegateForm() {
     shouldUnregister: false,
   });
 
+  // Reset the form completely when the user changes (e.g. after account switch)
+  useEffect(() => {
+    form.reset(loadedDraft ?? defaultValues);
+    setStepIndex(0);
+    setSubmittedPayload(null);
+    setStatusMessage(loadedDraft ? 'Draft restored from local storage.' : 'Draft ready to autosave locally.');
+  }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const values = useWatch({ control: form.control });
 
   useEffect(() => {
-    if (!values) return;
-
+    if (!values || isConfirmed) return;
     const timer = window.setTimeout(() => {
-      saveDraft(form.getValues());
-      setSavedAt(window.localStorage.getItem(`${draftStorageKey}:savedAt`));
+      saveDraft(uid, form.getValues());
+      setSavedAt(window.localStorage.getItem(`${draftStorageKey(uid)}:savedAt`));
       setStatusMessage('Draft autosaved locally.');
     }, 500);
-
     return () => window.clearTimeout(timer);
-  }, [values]);
-
-  useEffect(() => {
-    if (loadedDraft) {
-      setStatusMessage('Draft restored from local storage.');
-    }
-  }, [loadedDraft]);
+  }, [values, uid, isConfirmed]);
 
   const selectedCommittee = committees.find(
     (committee: Committee) =>
@@ -341,10 +377,11 @@ export function DelegateForm() {
   };
 
   const onSubmit = form.handleSubmit(async (formValues) => {
+    if (isConfirmed) return;
     const parsed = applicationSchema.parse(formValues);
     setSubmittedPayload(parsed);
-    saveDraft(parsed);
-    setSavedAt(window.localStorage.getItem(`${draftStorageKey}:savedAt`));
+    saveDraft(uid, parsed);
+    setSavedAt(window.localStorage.getItem(`${draftStorageKey(uid)}:savedAt`));
     setStatusMessage('Application ready for payment. Draft retained locally.');
     setStepIndex(stepLabels.length - 1);
     await queryClient.invalidateQueries({ queryKey: ['delegates'] });
@@ -352,6 +389,23 @@ export function DelegateForm() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-8">
+      {isConfirmed && (
+        <div className="flex items-center gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-5 py-4">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+            <Check size={16} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-emerald-200">Registration Confirmed</p>
+            <p className="text-xs text-emerald-100/70">
+              Your payment is complete and your place is secured.
+              {regStatus?.registrationNumber && (
+                <span className="ml-1 font-mono">(#{regStatus.registrationNumber})</span>
+              )}
+            </p>
+          </div>
+          <Lock size={14} className="shrink-0 text-emerald-400" />
+        </div>
+      )}
       <div className="grid gap-4 xl:grid-cols-[1.4fr_0.8fr]">
         <Card className="glass-card overflow-hidden border-white/[0.08]">
           <CardHeader className="space-y-4 border-b border-white/[0.06] bg-white/[0.015] p-5 sm:p-6">
@@ -370,9 +424,11 @@ export function DelegateForm() {
               </div>
               <div className="rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3 text-right">
                 <p className="text-[10px] uppercase tracking-[0.32em] text-gold-400">
-                  Current Step
+                  {isConfirmed ? 'Status' : 'Current Step'}
                 </p>
-                <p className="mt-1 text-sm font-semibold text-foreground">{step.title}</p>
+                <p className="mt-1 text-sm font-semibold text-foreground">
+                  {isConfirmed ? 'Confirmed & Paid' : step.title}
+                </p>
               </div>
             </div>
 
@@ -380,14 +436,17 @@ export function DelegateForm() {
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>Progress</span>
                 <span>
-                  {stepIndex + 1} of {stepLabels.length}
+                  {isConfirmed ? '7 of 7 — Complete' : `${stepIndex + 1} of ${stepLabels.length}`}
                 </span>
               </div>
-              <Progress value={progress} />
+              <Progress value={isConfirmed ? 100 : progress} />
             </div>
           </CardHeader>
 
           <CardContent className="space-y-5 p-5 sm:p-6">
+            {regStatusLoading && (
+              <p className="animate-pulse text-xs text-muted-foreground">Checking registration status…</p>
+            )}
             <div className="overflow-x-auto pb-1">
               <Tabs value={step.key} className="w-full">
                 <TabsList className="grid h-auto w-max min-w-full grid-cols-7 gap-0.5 rounded-2xl bg-navy-900/70 p-1">
@@ -414,6 +473,7 @@ export function DelegateForm() {
                           exit={{ opacity: 0, y: -10 }}
                           transition={{ duration: 0.22 }}
                         >
+                          <fieldset disabled={isConfirmed} className="contents">
                           {key === 'personal' && (
                             <SectionShell
                               title="Personal Information"
@@ -842,11 +902,11 @@ export function DelegateForm() {
                                   <Button
                                     type="button"
                                     variant="outline"
-                                    onClick={() => form.reset(loadDraft() ?? defaultValues)}
+                                    onClick={() => form.reset(loadDraft(uid) ?? defaultValues)}
                                   >
                                     Restore Draft
                                   </Button>
-                                  <Button type="button" variant="ghost" onClick={clearDraft}>
+                                  <Button type="button" variant="ghost" onClick={() => clearDraft(uid)}>
                                     Clear Draft
                                   </Button>
                                 </CardFooter>
@@ -887,6 +947,7 @@ export function DelegateForm() {
                               </div>
                             </SectionShell>
                           )}
+                          </fieldset>
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -899,32 +960,36 @@ export function DelegateForm() {
           <CardFooter className="flex flex-col gap-3 border-t border-white/[0.06] p-5 sm:flex-row sm:justify-between sm:p-6">
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <ShieldCheck size={13} className="text-gold-400" />
-              {stepIndex === 0
-                ? 'Start with your personal details.'
-                : 'Every step is validated before continuing.'}
+              {isConfirmed
+                ? 'Registration is confirmed. No further action required.'
+                : stepIndex === 0
+                  ? 'Start with your personal details.'
+                  : 'Every step is validated before continuing.'}
             </div>
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => setStepIndex((current) => Math.max(0, current - 1))}
-                disabled={stepIndex === 0}
-              >
-                <ArrowLeft size={14} />
-                Back
-              </Button>
-              {stepIndex < stepLabels.length - 1 ? (
-                <Button type="button" onClick={() => goToStep(stepIndex + 1)}>
-                  Next
-                  <ArrowRight size={14} />
+            {!isConfirmed && (
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setStepIndex((current) => Math.max(0, current - 1))}
+                  disabled={stepIndex === 0}
+                >
+                  <ArrowLeft size={14} />
+                  Back
                 </Button>
-              ) : (
-                <Button type="button" onClick={onSubmit}>
-                  <Check size={14} />
-                  Submit Application
-                </Button>
-              )}
-            </div>
+                {stepIndex < stepLabels.length - 1 ? (
+                  <Button type="button" onClick={() => goToStep(stepIndex + 1)}>
+                    Next
+                    <ArrowRight size={14} />
+                  </Button>
+                ) : (
+                  <Button type="button" onClick={onSubmit}>
+                    <Check size={14} />
+                    Submit Application
+                  </Button>
+                )}
+              </div>
+            )}
           </CardFooter>
         </Card>
 
@@ -932,38 +997,48 @@ export function DelegateForm() {
           <Card className="glass-card border-white/[0.08]">
             <CardHeader>
               <CardTitle className="text-base">Step Tracker</CardTitle>
-              <CardDescription>Complete each stage to unlock the next.</CardDescription>
+              <CardDescription>
+                {isConfirmed ? 'All steps confirmed.' : 'Complete each stage to unlock the next.'}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {stepLabels.map(({ key, title, icon: Icon }, index) => {
-                const active = index === stepIndex;
-                const complete = index < stepIndex;
+                const active = !isConfirmed && index === stepIndex;
+                const complete = isConfirmed || index < stepIndex;
                 return (
                   <button
                     key={key}
                     type="button"
-                    onClick={() => setStepIndex(index)}
+                    onClick={() => !isConfirmed && setStepIndex(index)}
+                    disabled={isConfirmed}
                     className={cn(
                       'flex w-full items-center gap-3 rounded-2xl border px-3 py-3 text-left transition-all',
                       active
                         ? 'border-gold-500/30 bg-gold-500/10'
-                        : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]',
+                        : isConfirmed
+                          ? 'border-emerald-500/20 bg-emerald-500/5 cursor-default'
+                          : 'border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]',
                     )}
                   >
                     <div
                       className={cn(
                         'flex h-9 w-9 items-center justify-center rounded-xl border',
-                        complete || active
-                          ? 'border-gold-500/30 bg-gold-500/10 text-gold-400'
-                          : 'border-white/[0.06] bg-navy-900/60 text-muted-foreground',
+                        isConfirmed
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          : complete || active
+                            ? 'border-gold-500/30 bg-gold-500/10 text-gold-400'
+                            : 'border-white/[0.06] bg-navy-900/60 text-muted-foreground',
                       )}
                     >
                       {complete ? <Check size={14} /> : <Icon size={14} />}
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium text-foreground">{title}</p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {complete ? 'Completed' : active ? 'In progress' : 'Pending'}
+                      <p className={cn(
+                        'text-[11px]',
+                        isConfirmed ? 'text-emerald-400' : 'text-muted-foreground',
+                      )}>
+                        {isConfirmed ? 'Confirmed' : complete ? 'Completed' : active ? 'In progress' : 'Pending'}
                       </p>
                     </div>
                   </button>

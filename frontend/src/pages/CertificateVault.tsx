@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Award,
   BadgeCheck,
@@ -22,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { cn, formatNumber } from '@/lib/utils';
-import { readJson, writeJson } from '@/lib/storage';
 import {
   formatTimestamp,
   certificatePalette,
@@ -31,7 +31,8 @@ import {
   createDefaultCertificates,
 } from '@/lib/certificate-utils';
 import type { VaultCertificate, CertificateVaultRecord } from '@/lib/certificate-utils';
-import type { DelegateApplicationDraft, PaymentSession } from '@/types';
+import { useAuth } from '@/features/auth/AuthContext';
+import api from '@/lib/api';
 import { jsPDF } from 'jspdf';
 
 
@@ -41,23 +42,29 @@ const iconMap: Record<string, ComponentType<{ className?: string }>> = {
   ShieldCheck,
 };
 
-const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
-const paymentSessionKey = 'mun-gridixia:payment-session:v1';
 const certificateVaultKey = 'mun-gridixia:certificate-vault:v1';
-const checkInLedgerKey = 'mun-gridixia:checkin-ledger:v1';
 
-function useVaultContext() {
-  const [draft, setDraft] = useState<Partial<DelegateApplicationDraft> | undefined>(undefined);
-  const [session, setSession] = useState<PaymentSession | undefined>(undefined);
-  const [ready, setReady] = useState(false);
+interface VaultStatus {
+  applicantName: string | null;
+  committeeName: string | null;
+  committeeAbbr: string | null;
+  paymentVerified: boolean;
+  checkedIn: boolean;
+  registrationStatus: string;
+}
 
-  useEffect(() => {
-    setDraft(readJson<DelegateApplicationDraft>(delegateDraftKey));
-    setSession(readJson<PaymentSession>(paymentSessionKey));
-    setReady(true);
-  }, []);
-
-  return { draft, session, ready };
+function useVaultStatus() {
+  const { user } = useAuth();
+  return useQuery<VaultStatus | null>({
+    queryKey: ['vault-status', user?.id],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: VaultStatus | null }>('/payments/my-vault-status');
+      return data.data;
+    },
+    enabled: Boolean(user),
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
 }
 
 // ── Sub-components ──────────────────────────────────────────
@@ -419,29 +426,44 @@ function InfoPanel({
 // ── Main component ──────────────────────────────────────────
 
 export default function CertificateVault() {
-  const { draft, session, ready } = useVaultContext();
+  const { data: vaultStatus, isLoading: statusLoading } = useVaultStatus();
+  const { user } = useAuth();
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState('participation');
   const [vaultLedger, setVaultLedger] = useState<CertificateVaultRecord>(
-    () => readJson<CertificateVaultRecord>(certificateVaultKey) ?? {},
+    () => {
+      if (!user) return {};
+      const raw = localStorage.getItem(`${certificateVaultKey}:${user.id}`);
+      return raw ? (JSON.parse(raw) as CertificateVaultRecord) : {};
+    },
   );
 
-  const delegateName = session?.applicantName || draft?.personal?.fullName || 'Delegate Pending';
-  const committee =
-    session?.committeeName ||
-    draft?.committeePreference?.preferredCommitteeName ||
-    'Unassigned Committee';
-  const country = draft?.countryPreference?.firstChoiceCountry || 'Pending Country';
+  const delegateName = vaultStatus?.applicantName || user?.email || 'Delegate Pending';
+  const committee = vaultStatus?.committeeName || 'Unassigned Committee';
+  const country = 'Pending Country';
 
-  const checkInTicket = session ? `DP-${session.orderId.slice(-8).toUpperCase()}` : undefined;
-  const checkInRecord = checkInTicket
-    ? readJson<Record<string, { checkedInAt: string }>>(checkInLedgerKey)?.[checkInTicket]
+  const canIssue = Boolean(vaultStatus?.paymentVerified && vaultStatus?.checkedIn);
+
+  // Build a minimal session-like object so createDefaultCertificates can derive states
+  const syntheticSession = vaultStatus
+    ? {
+        status: vaultStatus.paymentVerified ? ('success' as const) : ('pending' as const),
+        orderId: user?.id ?? 'pending',
+      }
     : undefined;
-  const canIssue = Boolean(session?.status === 'success' && checkInRecord);
 
   const certificates = useMemo(
-    () => createDefaultCertificates(delegateName, committee, country, session, vaultLedger),
-    [committee, country, delegateName, session, vaultLedger],
+    () =>
+      createDefaultCertificates(
+        delegateName,
+        committee,
+        country,
+        syntheticSession as Parameters<typeof createDefaultCertificates>[3],
+        vaultLedger,
+        vaultStatus?.checkedIn ?? false,
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [committee, country, delegateName, vaultStatus, vaultLedger],
   );
   const selectedCertificate =
     certificates.find((certificate) => certificate.id === selectedId) ?? certificates[0];
@@ -473,9 +495,13 @@ export default function CertificateVault() {
   }, [certificates]);
 
   useEffect(() => {
-    const nextLedger = readJson<CertificateVaultRecord>(certificateVaultKey) ?? {};
+    if (!user) return;
+    const nextLedger = (() => {
+      const raw = localStorage.getItem(`${certificateVaultKey}:${user.id}`);
+      return raw ? (JSON.parse(raw) as CertificateVaultRecord) : {};
+    })();
     setVaultLedger(nextLedger);
-  }, []);
+  }, [user]);
 
   const issuedCount = certificates.filter((c) => c.state === 'issued').length;
   const availableCount = certificates.filter((c) => c.state === 'available').length;
@@ -484,7 +510,7 @@ export default function CertificateVault() {
 
   const handleDownload = () => {
     const verificationBase = window.location.origin;
-    const verificationUrl = `${verificationBase}/verify/${session?.orderId ?? 'pending'}/${selectedCertificate.id}`;
+    const verificationUrl = `${verificationBase}/verify/${user?.id ?? 'pending'}/${selectedCertificate.id}`;
     const svg = buildPreviewMarkup(
       selectedCertificate,
       delegateName,
@@ -504,7 +530,7 @@ export default function CertificateVault() {
 
   const handleDownloadPdf = async () => {
     const verificationBase = window.location.origin;
-    const verificationUrl = `${verificationBase}/verify/${session?.orderId ?? 'pending'}/${selectedCertificate.id}`;
+    const verificationUrl = `${verificationBase}/verify/${user?.id ?? 'pending'}/${selectedCertificate.id}`;
     const svg = buildPreviewMarkup(
       selectedCertificate,
       delegateName,
@@ -571,20 +597,20 @@ export default function CertificateVault() {
   };
 
   const handleIssue = () => {
-    if (!session) return;
+    if (!user) return;
     const nextLedger = { ...vaultLedger };
-    const key = `certificate:${session.orderId}:${selectedCertificate.id}`;
+    const key = `certificate:${user.id}:${selectedCertificate.id}`;
     nextLedger[key] = {
       state: 'issued',
       issuedAt: new Date().toISOString(),
       sharedAt: nextLedger[key]?.sharedAt,
     };
     setVaultLedger(nextLedger);
-    writeJson(certificateVaultKey, nextLedger);
+    localStorage.setItem(`${certificateVaultKey}:${user.id}`, JSON.stringify(nextLedger));
     toast(`${selectedCertificate.title} issued successfully.`, 'success');
   };
 
-  if (!ready) {
+  if (statusLoading) {
     return (
       <div className="space-y-6">
         <PageHeader title="Certificate Vault" subtitle="Professional achievement showcase" />
@@ -592,7 +618,6 @@ export default function CertificateVault() {
       </div>
     );
   }
-
   return (
     <div className="space-y-6 pb-8">
       <PageHeader
@@ -697,13 +722,13 @@ export default function CertificateVault() {
             <AchievementCard
               title="Delegate Readiness"
               description="Registration and payment status"
-              score={session?.status === 'success' ? 'Conference ready' : 'Waiting for payment'}
+              score={vaultStatus?.paymentVerified ? 'Payment Verified' : 'Waiting for payment'}
               icon={ShieldCheck}
             />
             <AchievementCard
               title="Conference Presence"
               description="Check-in and attendance validation"
-              score={checkInRecord ? 'Attended and verified' : 'Pending check-in'}
+              score={vaultStatus?.checkedIn ? 'Attended and verified' : 'Pending check-in'}
               icon={Users}
             />
             <AchievementCard

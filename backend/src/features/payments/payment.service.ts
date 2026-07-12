@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { AuditLogModel } from '../../models/AuditLog';
 import { config } from '../../config';
+import { AttendanceModel } from '../../models/Attendance';
 import { CommitteeModel } from '../../models/Committee';
 import { EventModel } from '../../models/Event';
 import { PaymentModel, type PaymentDocument } from '../../models/Payment';
@@ -239,6 +240,63 @@ export const paymentService = {
       .lean()
       .exec();
     return registrations.map((r) => String(r.eventId));
+  },
+
+  async getMyRegistrationStatus(userId: string) {
+    if (!Types.ObjectId.isValid(userId)) return null;
+    // Return the most recently updated registration for this user
+    const registration = await RegistrationModel.findOne(
+      { userId: new Types.ObjectId(userId) },
+      { status: 1, paymentStatus: 1, committeeId: 1, eventId: 1, registrationNumber: 1 },
+    )
+      .sort({ updatedAt: -1 })
+      .lean()
+      .exec();
+    if (!registration) return null;
+    return {
+      registrationNumber: registration.registrationNumber,
+      status: registration.status,
+      paymentStatus: registration.paymentStatus,
+      committeeId: registration.committeeId ? String(registration.committeeId) : null,
+      eventId: String(registration.eventId),
+      isConfirmed:
+        registration.status === 'confirmed' && registration.paymentStatus === 'paid',
+    };
+  },
+
+  async getMyVaultStatus(userId: string) {
+    if (!Types.ObjectId.isValid(userId)) return null;
+
+    const uid = new Types.ObjectId(userId);
+
+    const registration = await RegistrationModel.findOne({ userId: uid })
+      .sort({ updatedAt: -1 })
+      .populate<{ committeeId: { name: string; abbr: string } | null }>('committeeId', 'name abbr')
+      .lean()
+      .exec();
+
+    if (!registration) return null;
+
+    const payment = await PaymentModel.findOne({ userId: uid, status: 'captured' })
+      .sort({ paidAt: -1 })
+      .lean()
+      .exec();
+
+    const attendance = await AttendanceModel.findOne({ userId: uid })
+      .sort({ markedAt: -1 })
+      .lean()
+      .exec();
+
+    const committee = registration.committeeId as { name: string; abbr: string } | null;
+
+    return {
+      applicantName: (payment?.metadata?.applicantName as string | undefined) ?? null,
+      committeeName: committee?.name ?? null,
+      committeeAbbr: committee?.abbr ?? null,
+      paymentVerified: registration.paymentStatus === 'paid',
+      checkedIn: attendance?.status === 'present',
+      registrationStatus: registration.status,
+    };
   },
 
   async handleWebhook(rawBody: Buffer, signature: string | undefined, eventId?: string) {

@@ -55,9 +55,10 @@ import type {
   PaymentStatus,
 } from '@/types';
 
-const delegateDraftKey = 'mun-gridixia:delegate-application-draft:v1';
-const paymentDraftKey = 'mun-gridixia:payment-draft:v1';
-const paymentSessionKey = 'mun-gridixia:payment-session:v1';
+const delegateDraftKey  = (uid: string) => `mun-gridixia:delegate-application-draft:v1:${uid}`;
+const paymentDraftKey   = (uid: string) => `mun-gridixia:payment-draft:v1:${uid}`;
+const paymentSessionKey = (uid: string) => `mun-gridixia:payment-session:v1:${uid}`;
+const paidEventIdsKey   = (uid: string) => `mun-gridixia:paid-event-ids:v1:${uid}`;
 const razorpayCheckoutSrc = 'https://checkout.razorpay.com/v1/checkout.js';
 
 const paymentSchema = z.object({
@@ -163,40 +164,37 @@ const defaultValues: PaymentFormValues = {
   consent: false,
 };
 
-const paidEventIdsKey = 'mun-gridixia:paid-event-ids:v1';
-
-function getPaidEventIds(): string[] {
+function getPaidEventIds(uid: string): string[] {
   try {
-    return JSON.parse(localStorage.getItem(paidEventIdsKey) ?? '[]') as string[];
+    return JSON.parse(localStorage.getItem(paidEventIdsKey(uid)) ?? '[]') as string[];
   } catch {
     return [];
   }
 }
 
-function addPaidEventId(eventId: string) {
-  const ids = getPaidEventIds();
+function addPaidEventId(uid: string, eventId: string) {
+  const ids = getPaidEventIds(uid);
   if (!ids.includes(eventId)) {
-    localStorage.setItem(paidEventIdsKey, JSON.stringify([...ids, eventId]));
+    localStorage.setItem(paidEventIdsKey(uid), JSON.stringify([...ids, eventId]));
   }
 }
 
-function clearPaymentStorage() {
-  window.localStorage.removeItem(paymentDraftKey);
-  window.localStorage.removeItem(paymentSessionKey);
-  window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+function clearPaymentStorage(uid: string) {
+  window.localStorage.removeItem(paymentDraftKey(uid));
+  window.localStorage.removeItem(paymentSessionKey(uid));
+  window.localStorage.removeItem(`${paymentSessionKey(uid)}:locked`);
 }
 
-function getSeedValues(): Partial<PaymentFormValues> {
-  const delegateDraft = readJson<DelegateApplicationDraft>(delegateDraftKey);
-  const paymentDraft = readJson<Partial<PaymentFormValues>>(paymentDraftKey);
+function getSeedValues(uid: string, userEmail: string): Partial<PaymentFormValues> {
+  const delegateDraft = readJson<DelegateApplicationDraft>(delegateDraftKey(uid));
+  const paymentDraft  = readJson<Partial<PaymentFormValues>>(paymentDraftKey(uid));
 
   return {
     ...paymentDraft,
-    applicantName: paymentDraft?.applicantName ?? delegateDraft?.personal.fullName ?? '',
-    email: paymentDraft?.email ?? delegateDraft?.personal.email ?? '',
-    committeeId:
-      paymentDraft?.committeeId ?? delegateDraft?.committeePreference.preferredCommitteeId ?? '',
-    billingName: paymentDraft?.billingName ?? delegateDraft?.personal.fullName ?? '',
+    applicantName: paymentDraft?.applicantName ?? delegateDraft?.personal?.fullName ?? '',
+    email:         paymentDraft?.email         ?? delegateDraft?.personal?.email    ?? userEmail,
+    committeeId:   paymentDraft?.committeeId   ?? delegateDraft?.committeePreference?.preferredCommitteeId ?? '',
+    billingName:   paymentDraft?.billingName   ?? delegateDraft?.personal?.fullName ?? '',
   };
 }
 
@@ -439,18 +437,18 @@ function SectionCard({
   );
 }
 
-function useRestoreableSession() {
+function useRestoreableSession(uid: string) {
   const [session, setSession] = useState<PaymentSession | undefined>(() => {
-    const saved = readJson<PaymentSession>(paymentSessionKey);
+    const saved = readJson<PaymentSession>(paymentSessionKey(uid));
     // Don't restore a completed session — user is here to make a new payment
     if (saved?.status === 'success') {
-      clearPaymentStorage();
+      clearPaymentStorage(uid);
       return undefined;
     }
     return saved;
   });
   const [savedDraft, setSavedDraft] = useState<Partial<PaymentFormValues>>(
-    () => readJson<Partial<PaymentFormValues>>(paymentDraftKey) ?? {},
+    () => readJson<Partial<PaymentFormValues>>(paymentDraftKey(uid)) ?? {},
   );
 
   useEffect(() => {
@@ -644,13 +642,15 @@ export function PaymentExperience() {
 
 function DelegatePaymentExperience() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const uid = user?.id ?? 'anonymous';
   const { data: committees = [] } = useCommittees();
   const { data: events = [] } = useEvents();
-  const { session, setSession, savedDraft, setSavedDraft } = useRestoreableSession();
+  const { session, setSession, savedDraft, setSavedDraft } = useRestoreableSession(uid);
   const [infoMessage, setInfoMessage] = useState('Ready to create a secure order.');
   const [lastRecoveryAction, setLastRecoveryAction] = useState('');
   const [formError, setFormError] = useState('');
-  const seedValues = useMemo(() => getSeedValues(), []);
+  const seedValues = useMemo(() => getSeedValues(uid, user?.email ?? ''), [uid, user?.email]);
 
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -669,7 +669,7 @@ function DelegatePaymentExperience() {
     const timer = window.setTimeout(() => {
       const currentValues = form.getValues();
       setSavedDraft(currentValues);
-      writeJson(paymentDraftKey, currentValues);
+      writeJson(paymentDraftKey(uid), currentValues);
       setInfoMessage('Payment draft autosaved locally.');
     }, 400);
 
@@ -678,13 +678,13 @@ function DelegatePaymentExperience() {
 
   useEffect(() => {
     if (session) {
-      writeJson(paymentSessionKey, session);
-      window.localStorage.setItem(`${paymentSessionKey}:locked`, session.orderId);
+      writeJson(paymentSessionKey(uid), session);
+      window.localStorage.setItem(`${paymentSessionKey(uid)}:locked`, session.orderId);
     }
-  }, [session]);
+  }, [session, uid]);
 
   const { data: serverPaidEventIds = [] } = useQuery<string[]>({
-    queryKey: ['paid-event-ids'],
+    queryKey: ['paid-event-ids', uid],
     queryFn: async () => {
       const { data } = await api.get<{ data: string[] }>('/payments/paid-event-ids');
       return data.data;
@@ -693,10 +693,10 @@ function DelegatePaymentExperience() {
   });
 
   const paidEventIds = useMemo(() => {
-    const local = getPaidEventIds();
+    const local = getPaidEventIds(uid);
     const merged = new Set([...serverPaidEventIds, ...local]);
     return merged;
-  }, [serverPaidEventIds]);
+  }, [serverPaidEventIds, uid]);
 
   const availableCommittees = committees.filter((c: Committee) => !paidEventIds.has(c.eventId));
 
@@ -713,7 +713,7 @@ function DelegatePaymentExperience() {
 
   const paymentMutation = useMutation({
     mutationFn: async (values: PaymentFormValues) => {
-      const currentSession = readJson<PaymentSession>(paymentSessionKey);
+      const currentSession = readJson<PaymentSession>(paymentSessionKey(uid));
       const attempts = (currentSession?.attempts ?? 0) + 1;
 
       const { data } = await api.post<{ data: CreatePaymentOrderResponse }>('/payments/orders', {
@@ -764,7 +764,7 @@ function DelegatePaymentExperience() {
                 failureReason: 'Checkout was closed before payment confirmation.',
                 updatedAt: new Date().toISOString(),
               };
-              window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+              window.localStorage.removeItem(`${paymentSessionKey(uid)}:locked`);
               reject(failedSession);
             },
           },
@@ -803,9 +803,9 @@ function DelegatePaymentExperience() {
     },
     onSuccess: (result) => {
       setSession(result);
-      writeJson(paymentSessionKey, result);
+      writeJson(paymentSessionKey(uid), result);
       if (result.status === 'success') {
-        addPaidEventId(result.eventId);
+        addPaidEventId(uid, result.eventId);
       }
       setInfoMessage(
         result.status === 'success'
@@ -813,7 +813,7 @@ function DelegatePaymentExperience() {
           : 'Payment status updated. You can retry if it did not complete.',
       );
       if (result.status === 'success' || result.status === 'failed') {
-        window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+        window.localStorage.removeItem(`${paymentSessionKey(uid)}:locked`);
       }
       queryClient.invalidateQueries({ queryKey: ['delegates'] });
       queryClient.invalidateQueries({ queryKey: ['committees'] });
@@ -822,8 +822,8 @@ function DelegatePaymentExperience() {
       if (isPaymentSession(error)) {
         const failedSession = error;
         setSession(failedSession);
-        writeJson(paymentSessionKey, failedSession);
-        window.localStorage.removeItem(`${paymentSessionKey}:locked`);
+        writeJson(paymentSessionKey(uid), failedSession);
+        window.localStorage.removeItem(`${paymentSessionKey(uid)}:locked`);
         setInfoMessage(failedSession.failureReason ?? 'Payment did not complete.');
         return;
       }
@@ -897,10 +897,10 @@ function DelegatePaymentExperience() {
   };
 
   const startFresh = () => {
-    clearPaymentStorage();
+    clearPaymentStorage(uid);
     setSession(undefined);
     setSavedDraft({});
-    form.reset(defaultValues);
+    form.reset({ ...defaultValues, email: user?.email ?? '' });
     setInfoMessage('Fresh payment session started.');
     setLastRecoveryAction('Started fresh');
   };
@@ -1015,8 +1015,8 @@ function DelegatePaymentExperience() {
               <ValueRow
                 label="Country Preference"
                 value={
-                  readJson<DelegateApplicationDraft>(delegateDraftKey)?.countryPreference
-                    .firstChoiceCountry || 'Imported from application draft'
+                  readJson<DelegateApplicationDraft>(delegateDraftKey(uid))?.countryPreference
+                    ?.firstChoiceCountry || 'Imported from application draft'
                 }
               />
               <ValueRow label="Session Status" value={statusMeta[paymentStatus].label} />

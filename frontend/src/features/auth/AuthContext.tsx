@@ -134,6 +134,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } finally {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       setAccessToken(null);
+      // Clear all user-scoped delegate/payment data so it never leaks to the next session
+      Object.keys(localStorage)
+        .filter((k) => k.startsWith('mun-gridixia:') || k.startsWith('mun_apply_draft_'))
+        .forEach((k) => localStorage.removeItem(k));
       dispatch({ type: 'LOGOUT' });
     }
   }, []);

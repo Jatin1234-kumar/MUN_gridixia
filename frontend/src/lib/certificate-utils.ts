@@ -1,8 +1,3 @@
-import { readJson } from '@/lib/storage';
-import type { PaymentSession } from '@/types';
-
-const checkInLedgerKey = 'mun-gridixia:checkin-ledger:v1';
-
 export type CertificateState = 'locked' | 'available' | 'issued';
 
 export type VaultCertificate = {
@@ -129,15 +124,12 @@ export function createDefaultCertificates(
   delegateName: string,
   committee: string,
   country: string,
-  session?: PaymentSession,
+  session?: { status: string; orderId: string },
   ledger?: CertificateVaultRecord,
+  checkedIn = false,
 ): VaultCertificate[] {
   const canIssue = Boolean(session?.status === 'success' && ledger);
-  const hasAttendance = Boolean(
-    readJson<Record<string, unknown>>(checkInLedgerKey)?.[
-      session ? `DP-${session.orderId.slice(-8).toUpperCase()}` : ''
-    ],
-  );
+  const hasAttendance = checkedIn;
   const lookupState = (id: string): CertificateState | undefined => {
     if (!session) return undefined;
     return ledger?.[`certificate:${session.orderId}:${id}`]?.state;

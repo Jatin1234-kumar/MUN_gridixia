@@ -8,6 +8,7 @@ import { STEPS } from '@/features/apply/apply.schemas';
 import { StepTracker } from '@/features/apply/components/StepTracker';
 import { PersonalStep } from '@/features/apply/steps/PersonalStep';
 import { AcademicStep } from '@/features/apply/steps/AcademicStep';
+import { useAuth } from '@/features/auth/AuthContext';
 import type {
   PersonalData,
   AcademicData,
@@ -31,9 +32,11 @@ const PaymentStep       = lazy(() => import('@/features/apply/steps/PaymentStep'
 export default function Apply() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const id = eventId ?? '';
+  const userId = user?.id ?? 'anonymous';
 
-  const { draft, saveStepData, goToStep, clearDraft } = useDraft(id);
+  const { draft, saveStepData, goToStep, clearDraft } = useDraft(userId, id);
   const submitApplication = useSubmitApplication();
   const [direction, setDirection] = useState<1 | -1>(1);
   const [submitted, setSubmitted] = useState(false);
@@ -145,6 +148,7 @@ export default function Apply() {
               {step === 0 && (
                 <PersonalStep
                   defaultValues={draft.personal}
+                  emailFallback={user?.email}
                   savedAt={draft.savedAt}
                   direction={direction}
                   onNext={(data: PersonalData) => { saveStepData('personal', data); next(1); }}

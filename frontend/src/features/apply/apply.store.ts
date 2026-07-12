@@ -1,19 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApplicationDraft } from './apply.schemas';
 
-const DRAFT_KEY = (eventId: string) => `mun_apply_draft_${eventId}`;
+const DRAFT_KEY = (userId: string, eventId: string) => `mun_apply_draft_${userId}_${eventId}`;
 const AUTOSAVE_DELAY = 800;
 
-export function useDraft(eventId: string) {
+export function useDraft(userId: string, eventId: string) {
   const [draft, setDraftState] = useState<ApplicationDraft>(() => {
     try {
-      const raw = localStorage.getItem(DRAFT_KEY(eventId));
+      const raw = localStorage.getItem(DRAFT_KEY(userId, eventId));
       if (raw) return JSON.parse(raw) as ApplicationDraft;
     } catch { /* ignore */ }
     return { eventId, currentStep: 0, completedSteps: [] };
   });
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Re-initialise draft when the user or event changes (e.g. after login switch)
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY(userId, eventId));
+      setDraftState(raw ? (JSON.parse(raw) as ApplicationDraft) : { eventId, currentStep: 0, completedSteps: [] });
+    } catch {
+      setDraftState({ eventId, currentStep: 0, completedSteps: [] });
+    }
+  }, [userId, eventId]);
 
   const setDraft = useCallback((updater: (prev: ApplicationDraft) => ApplicationDraft) => {
     setDraftState((prev) => {
@@ -22,12 +32,12 @@ export function useDraft(eventId: string) {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
         try {
-          localStorage.setItem(DRAFT_KEY(eventId), JSON.stringify({ ...next, savedAt: new Date().toISOString() }));
+          localStorage.setItem(DRAFT_KEY(userId, eventId), JSON.stringify({ ...next, savedAt: new Date().toISOString() }));
         } catch { /* quota exceeded — silently ignore */ }
       }, AUTOSAVE_DELAY);
       return next;
     });
-  }, [eventId]);
+  }, [userId, eventId]);
 
   const saveStepData = useCallback(
     <K extends keyof Omit<ApplicationDraft, 'eventId' | 'currentStep' | 'completedSteps' | 'savedAt'>>(
@@ -51,12 +61,12 @@ export function useDraft(eventId: string) {
   );
 
   const clearDraft = useCallback(() => {
-    localStorage.removeItem(DRAFT_KEY(eventId));
+    localStorage.removeItem(DRAFT_KEY(userId, eventId));
     setDraftState({ eventId, currentStep: 0, completedSteps: [] });
-  }, [eventId]);
+  }, [userId, eventId]);
 
   const hasSavedDraft = Boolean(
-    (() => { try { return localStorage.getItem(DRAFT_KEY(eventId)); } catch { return null; } })(),
+    (() => { try { return localStorage.getItem(DRAFT_KEY(userId, eventId)); } catch { return null; } })(),
   );
 
   // Flush on unmount
