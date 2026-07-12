@@ -290,142 +290,135 @@ export default function DelegatePass() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start w-full">
         <motion.div
+          className="xl:col-span-7"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25 }}
         >
-          <Card className="overflow-hidden border-white/[0.08] bg-[#08111d] text-white shadow-2xl shadow-black/30 print:shadow-none">
-            <CardHeader className="border-b border-white/10 bg-white/[0.02] px-5 py-5 sm:px-6">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <CardDescription className="text-[10px] uppercase tracking-[0.36em] text-white/50">
-                    Delegate Access
-                  </CardDescription>
-                  <CardTitle className="mt-2 text-2xl text-white">Conference Entry Card</CardTitle>
-                  <p className="mt-2 max-w-2xl text-sm text-white/65">
-                    Present this pass at check-in. It keeps your delegate identity, committee
-                    assignment, and QR verification in one polished view.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3 text-right">
-                  <p className="text-[10px] uppercase tracking-[0.32em] text-gold-300">
-                    Ticket Number
-                  </p>
-                  <p className="mt-1 text-xl font-semibold text-gold-200">{ticket}</p>
-                </div>
+          <div className="bg-navy-900/50 border border-white/[0.05] rounded-2xl p-6 text-white">
+            {/* Card header */}
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-white/10 pb-5">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.36em] text-white/50">
+                  Delegate Access
+                </p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">Conference Entry Card</h2>
+                <p className="mt-2 max-w-xl text-sm text-white/65">
+                  Present this pass at check-in. It keeps your delegate identity, committee
+                  assignment, and QR verification in one polished view.
+                </p>
               </div>
-            </CardHeader>
+              <div className="rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3 text-right">
+                <p className="text-[10px] uppercase tracking-[0.32em] text-gold-300">
+                  Ticket Number
+                </p>
+                <p className="mt-1 text-xl font-semibold text-gold-200">{ticket}</p>
+              </div>
+            </div>
 
-            <CardContent className="grid gap-0 p-0 lg:grid-cols-[1.05fr_0.95fr]">
-              <div className="space-y-5 px-5 py-6 sm:px-6">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
-                  <Badge variant="default">Conference Entry</Badge>
-                </div>
+            {/* Body */}
+            <div className="mt-5 space-y-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={statusConfig.variant}>{statusConfig.label}</Badge>
+                <Badge variant="default">Conference Entry</Badge>
+              </div>
 
-                <div className="space-y-4 rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.05] via-white/[0.03] to-gold-500/[0.06] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
-                  <div className="flex items-start gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-gold-500/20 bg-gold-500/10 text-3xl shadow-inner shadow-gold-500/10">
-                      {country === 'Pending assignment' ? '\u{1F3F3}\uFE0F' : '\u{1F3DB}\uFE0F'}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
-                        Delegate Name
-                      </p>
-                      <h2 className="mt-2 truncate text-3xl font-semibold text-white sm:text-4xl">
-                        {delegateName}
-                      </h2>
-                      <div className="mt-3 flex flex-wrap items-center gap-2">
-                        <Badge variant="mun">Professional Conference</Badge>
-                        <Badge variant={isPending ? 'pending' : 'active'}>
-                          {isPending ? 'Awaiting allocation' : 'Verified'}
-                        </Badge>
-                      </div>
-                    </div>
+              <div className="space-y-4 rounded-[28px] border border-white/10 bg-gradient-to-br from-white/[0.05] via-white/[0.03] to-gold-500/[0.06] p-5 shadow-[0_24px_60px_rgba(0,0,0,0.26)]">
+                <div className="flex items-start gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-3xl border border-gold-500/20 bg-gold-500/10 text-3xl shadow-inner shadow-gold-500/10">
+                    {country === 'Pending assignment' ? '\u{1F3F3}\uFE0F' : '\u{1F3DB}\uFE0F'}
                   </div>
-
-                  <div className="grid gap-3 sm:grid-cols-2">
-                    <AllocationField label="Committee" value={committee} icon={MapPinned} />
-                    <AllocationField label="Country" value={country} icon={Flag} />
-                    <AllocationField label="Ticket Number" value={ticket} icon={Ticket} />
-                    <AllocationField
-                      label="Allocation Date"
-                      value={formatDate(allocationDate)}
-                      icon={CreditCard}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/60">
-                      <UserRound className="h-3.5 w-3.5 text-gold-300" />
-                      Delegate
-                    </div>
-                    <p className="mt-3 text-sm text-white">{delegateName}</p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/60">
-                      <Wallet className="h-3.5 w-3.5 text-gold-300" />
-                      Session
-                    </div>
-                    <p className="mt-3 text-sm text-white">
-                      {state.session?.receiptId || 'Pending receipt'}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">
+                      Delegate Name
                     </p>
-                  </div>
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                    <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/60">
-                      <ShieldCheck className="h-3.5 w-3.5 text-gold-300" />
-                      Status
+                    <h3 className="mt-2 truncate text-3xl font-semibold text-white sm:text-4xl">
+                      {delegateName}
+                    </h3>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <Badge variant="mun">Professional Conference</Badge>
+                      <Badge variant={isPending ? 'pending' : 'active'}>
+                        {isPending ? 'Awaiting allocation' : 'Verified'}
+                      </Badge>
                     </div>
-                    <p className="mt-3 text-sm text-white capitalize">{passStatus}</p>
                   </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <AllocationField label="Committee" value={committee} icon={MapPinned} />
+                  <AllocationField label="Country" value={country} icon={Flag} />
+                  <AllocationField label="Ticket Number" value={ticket} icon={Ticket} />
+                  <AllocationField
+                    label="Allocation Date"
+                    value={formatDate(allocationDate)}
+                    icon={CreditCard}
+                  />
                 </div>
               </div>
 
-              <div className="relative border-t border-white/10 bg-[#f7f2e8] px-5 py-6 text-[#07111f] lg:border-t-0 lg:border-l lg:px-6 print:bg-white">
-                <div className="absolute left-0 top-1/2 hidden h-10 w-10 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-[#08111d] lg:block" />
-                <div className="absolute right-0 top-1/2 hidden h-10 w-10 translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 bg-[#08111d] lg:block" />
-
-                <div className="rounded-[30px] border border-[#eadfc4] bg-white p-4 shadow-[0_18px_36px_rgba(7,17,31,0.08)]">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] uppercase tracking-[0.32em] text-slate-500">
-                        QR Code
-                      </p>
-                      <p className="mt-1 text-sm font-medium text-slate-900">
-                        Scan at entry for verification
-                      </p>
-                    </div>
-                    <ScanLine className="h-5 w-5 text-slate-500" />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/60">
+                    <UserRound className="h-3.5 w-3.5 text-gold-300" />
+                    Delegate
                   </div>
-
-                  <div className="mt-4 flex items-center justify-center rounded-[26px] bg-[#faf7f0] p-4">
-                    <QRCodeSVG
-                      value={qrValue}
-                      size={200}
-                      bgColor="#ffffff"
-                      fgColor="#07111f"
-                      level="M"
-                      includeMargin={false}
-                    />
+                  <p className="mt-3 text-sm text-white">{delegateName}</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/60">
+                    <Wallet className="h-3.5 w-3.5 text-gold-300" />
+                    Session
                   </div>
-
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <InfoChip label="Committee" value={committee} />
-                    <InfoChip label="Country" value={country} />
-                    <InfoChip label="Ticket" value={ticket} />
-                    <InfoChip label="Date" value={formatDate(allocationDate)} />
+                  <p className="mt-3 text-sm text-white">
+                    {state.session?.receiptId || 'Pending receipt'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-white/60">
+                    <ShieldCheck className="h-3.5 w-3.5 text-gold-300" />
+                    Status
                   </div>
+                  <p className="mt-3 text-sm text-white capitalize">{passStatus}</p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </div>
         </motion.div>
 
-        <div className="space-y-4 print:hidden">
+        {/* QR pass card */}
+        <div className="xl:col-span-5 w-full max-w-[400px] mx-auto bg-white text-neutral-900 rounded-2xl p-6 shadow-xl flex flex-col items-center">
+          <div className="w-full flex items-center justify-between gap-3 mb-4">
+            <div>
+              <p className="text-[10px] uppercase tracking-[0.32em] text-slate-500">QR Code</p>
+              <p className="mt-1 text-sm font-medium text-slate-900">
+                Scan at entry for verification
+              </p>
+            </div>
+            <ScanLine className="h-5 w-5 text-slate-400" />
+          </div>
+
+          <div className="w-full flex items-center justify-center rounded-[26px] bg-[#faf7f0] p-4">
+            <QRCodeSVG
+              value={qrValue}
+              size={200}
+              bgColor="#ffffff"
+              fgColor="#07111f"
+              level="M"
+              includeMargin={false}
+            />
+          </div>
+
+          <div className="mt-4 grid w-full gap-3 grid-cols-2">
+            <InfoChip label="Committee" value={committee} />
+            <InfoChip label="Country" value={country} />
+            <InfoChip label="Ticket" value={ticket} />
+            <InfoChip label="Date" value={formatDate(allocationDate)} />
+          </div>
+        </div>
+
+        <div className="xl:col-span-12 space-y-4 print:hidden">
           <Card className="glass-card border-white/[0.08]">
             <CardHeader className="space-y-3 border-b border-white/[0.06] bg-white/[0.015]">
               <div className="flex items-center gap-3">
@@ -520,6 +513,7 @@ export default function DelegatePass() {
           </Card>
         </div>
       </div>
+      {/* end outer grid */}
 
       {isPending && (
         <Card className="border-amber-500/20 bg-amber-500/10 text-amber-100 print:hidden">

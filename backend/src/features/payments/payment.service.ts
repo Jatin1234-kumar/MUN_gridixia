@@ -6,7 +6,11 @@ import { EventModel } from '../../models/Event';
 import { PaymentModel, type PaymentDocument } from '../../models/Payment';
 import { RegistrationModel, type RegistrationDocument } from '../../models/Registration';
 import { AppError } from '../../utils/AppError';
-import { createRazorpayOrder, verifyCheckoutSignature, verifyWebhookSignature } from './razorpay.client';
+import {
+  createRazorpayOrder,
+  verifyCheckoutSignature,
+  verifyWebhookSignature,
+} from './razorpay.client';
 import type { FeeBreakdown, RazorpayPaymentEntity } from './payment.types';
 
 const OPEN_PAYMENT_STATUSES = ['created', 'pending', 'authorized'] as const;
@@ -129,18 +133,24 @@ export const paymentService = {
   },
 
   async verify(input: VerifyPaymentInput) {
-    if (!verifyCheckoutSignature({
-      orderId: input.razorpayOrderId,
-      paymentId: input.razorpayPaymentId,
-      signature: input.razorpaySignature,
-    })) {
+    if (
+      !verifyCheckoutSignature({
+        orderId: input.razorpayOrderId,
+        paymentId: input.razorpayPaymentId,
+        signature: input.razorpaySignature,
+      })
+    ) {
       await markPaymentFailed(input.razorpayOrderId, 'Invalid Razorpay signature');
       throw new AppError(400, 'Invalid payment signature');
     }
 
     const payment = await PaymentModel.findOne({ orderId: input.razorpayOrderId }).exec();
     if (!payment) throw new AppError(404, 'Payment order not found');
-    if (String(payment.userId) !== input.userId) throw new AppError(403, 'Payment does not belong to this user');
+    if (String(payment.userId) !== input.userId)
+      throw new AppError(403, 'Payment does not belong to this user');
+
+    // Fetch the registration before capture so we have committeeId available
+    const registration = await RegistrationModel.findById(payment.registrationId).exec();
 
     const updated = await capturePayment(payment, {
       paymentId: input.razorpayPaymentId,
@@ -148,6 +158,17 @@ export const paymentService = {
       source: 'checkout_verify',
       webhookEventId: undefined,
     });
+
+    // Increment the committee fill rate now that payment is confirmed
+    if (registration?.committeeId) {
+      await CommitteeModel.findOneAndUpdate(
+        {
+          _id: registration.committeeId,
+          $expr: { $lt: ['$filledSeats', '$capacity'] },
+        },
+        { $inc: { filledSeats: 1 } },
+      ).exec();
+    }
 
     await AuditLogModel.create({
       actorId: new Types.ObjectId(input.userId),
@@ -170,8 +191,43 @@ export const paymentService = {
   async getByOrderId(orderId: string, userId: string) {
     const payment = await PaymentModel.findOne({ orderId }).exec();
     if (!payment) throw new AppError(404, 'Payment order not found');
-    if (String(payment.userId) !== userId) throw new AppError(403, 'Payment does not belong to this user');
+    if (String(payment.userId) !== userId)
+      throw new AppError(403, 'Payment does not belong to this user');
     return toPaymentResponse(payment);
+  },
+
+  async getAllForAdmin(page: number, limit: number) {
+    const skip = (page - 1) * limit;
+    const [rows, total] = await Promise.all([
+      PaymentModel.find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .populate('userId', 'email')
+        .populate('eventId', 'name')
+        .lean()
+        .exec(),
+      PaymentModel.countDocuments(),
+    ]);
+
+    return {
+      rows: rows.map((p) => ({
+        id: String(p._id),
+        orderId: p.orderId ?? '—',
+        receiptId: p.receipt,
+        amount: p.amount,
+        currency: p.currency,
+        status: mapPaymentStatus(p.status),
+        applicantName: (p.metadata?.applicantName as string | undefined) ?? '—',
+        email: (p.metadata?.email as string | undefined) ?? '—',
+        eventName: (p.eventId as unknown as { name?: string } | null)?.name ?? '—',
+        paidAt: p.paidAt?.toISOString() ?? null,
+        createdAt: p.createdAt.toISOString(),
+      })),
+      total,
+      page,
+      pages: Math.ceil(total / limit),
+    };
   },
 
   async getPaidEventIds(userId: string): Promise<string[]> {
@@ -179,7 +235,9 @@ export const paymentService = {
     const registrations = await RegistrationModel.find(
       { userId: new Types.ObjectId(userId), paymentStatus: 'paid' },
       { eventId: 1 },
-    ).lean().exec();
+    )
+      .lean()
+      .exec();
     return registrations.map((r) => String(r.eventId));
   },
 
@@ -199,6 +257,7 @@ export const paymentService = {
     if (payload.event === 'payment.captured' || entity.status === 'captured') {
       const payment = await PaymentModel.findOne({ orderId: entity.order_id }).exec();
       if (payment) {
+        const wasAlreadyCaptured = payment.status === 'captured';
         await capturePayment(payment, {
           paymentId: entity.id,
           signature: undefined,
@@ -206,6 +265,19 @@ export const paymentService = {
           webhookEventId: eventId,
           gatewayPayment: entity,
         });
+        // Only increment once — skip if the payment was already captured before this webhook
+        if (!wasAlreadyCaptured) {
+          const registration = await RegistrationModel.findById(payment.registrationId).exec();
+          if (registration?.committeeId) {
+            await CommitteeModel.findOneAndUpdate(
+              {
+                _id: registration.committeeId,
+                $expr: { $lt: ['$filledSeats', '$capacity'] },
+              },
+              { $inc: { filledSeats: 1 } },
+            ).exec();
+          }
+        }
       }
     } else if (payload.event === 'payment.failed' || entity.status === 'failed') {
       await markPaymentFailed(
@@ -226,11 +298,13 @@ function computeFees(
   couponCode = '',
 ): FeeBreakdown {
   const baseFee = event.baseFee ?? (event.type === 'YOUTH_PARLIAMENT' ? 2800 : 3500);
-  const committeeFee = (committee.type === 'MUN' ? 1700 : 1300) + Math.round(committee.capacity * 10);
+  const committeeFee =
+    (committee.type === 'MUN' ? 1700 : 1300) + Math.round(committee.capacity * 10);
   const kitFee = 250;
   const serviceFee = 300;
   const subtotal = baseFee + committeeFee + kitFee + serviceFee;
-  const discount = couponCode.trim().toUpperCase() === 'GRIDIXIA10' ? Math.round(subtotal * 0.1) : 0;
+  const discount =
+    couponCode.trim().toUpperCase() === 'GRIDIXIA10' ? Math.round(subtotal * 0.1) : 0;
   const taxable = Math.max(0, subtotal - discount);
   const tax = Math.round(taxable * 0.18);
 
@@ -405,16 +479,15 @@ function generateRegistrationNumber(): string {
 }
 
 function mergeWebhookEventId(existing: unknown, next?: string): string[] {
-  const ids = Array.isArray(existing) ? existing.filter((id): id is string => typeof id === 'string') : [];
+  const ids = Array.isArray(existing)
+    ? existing.filter((id): id is string => typeof id === 'string')
+    : [];
   if (next && !ids.includes(next)) ids.push(next);
   return ids;
 }
 
 function isDuplicateKeyError(err: unknown): boolean {
   return Boolean(
-    err &&
-      typeof err === 'object' &&
-      'code' in err &&
-      (err as { code?: number }).code === 11000,
+    err && typeof err === 'object' && 'code' in err && (err as { code?: number }).code === 11000,
   );
 }

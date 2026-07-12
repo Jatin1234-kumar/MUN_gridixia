@@ -16,6 +16,7 @@ import {
   Shield,
   LogOut,
   Activity,
+  Ticket,
 } from 'lucide-react';
 import { useAuth } from '@/features/auth/AuthContext';
 import { cn } from '@/lib/utils';
@@ -27,6 +28,8 @@ interface NavItem {
   icon: typeof LayoutDashboard;
   minRole?: 'organizer' | 'admin' | 'super_admin';
   maxRole?: 'guest' | 'delegate' | 'staff' | 'organizer' | 'admin';
+  /** When true, item is shown ONLY to delegates (role === 'delegate') */
+  delegateOnly?: boolean;
 }
 
 const navItems: NavItem[] = [
@@ -36,7 +39,8 @@ const navItems: NavItem[] = [
   { label: 'Committees', to: '/committees', icon: Building2 },
   { label: 'Delegates', to: '/delegates', icon: Users, maxRole: 'staff' },
   { label: 'Country Allocation', to: '/country-allocation', icon: MapPinned, minRole: 'organizer' },
-  { label: 'Check-In Scanner', to: '/check-in', icon: ScanLine },
+  { label: 'Check-In Scanner', to: '/check-in', icon: ScanLine, minRole: 'organizer' },
+  { label: 'My Pass', to: '/delegate-pass', icon: Ticket, delegateOnly: true },
   { label: 'Certificate Vault', to: '/certificate-vault', icon: Award },
   { label: 'Payments', to: '/payments', icon: CreditCard },
   { label: 'Reports', to: '/reports', icon: FileText, minRole: 'organizer' },
@@ -53,7 +57,11 @@ export function Sidebar({ isOpen = false, onClose }: SidebarProps) {
   const { user, hasRole, hasMinimumRole, logout } = useAuth();
   const [showSignOutConfirm, setShowSignOutConfirm] = useState(false);
 
+  const isDelegate = hasRole('delegate');
+
   const visibleItems = navItems.filter((item) => {
+    if (item.delegateOnly) return isDelegate;
+    if (isDelegate) return !item.minRole; // delegates skip all minRole-gated items
     if (item.minRole && !hasMinimumRole(item.minRole)) return false;
     if (item.maxRole && hasMinimumRole(item.maxRole) && !hasRole(item.maxRole)) return false;
     return true;

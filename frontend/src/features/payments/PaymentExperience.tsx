@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
+import { useAuth } from '@/features/auth/AuthContext';
 
 declare global {
   interface Window {
@@ -24,6 +25,8 @@ import {
   Sparkles,
   TimerReset,
   Wallet,
+  ArrowUpDown,
+  Banknote,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -163,8 +166,11 @@ const defaultValues: PaymentFormValues = {
 const paidEventIdsKey = 'mun-gridixia:paid-event-ids:v1';
 
 function getPaidEventIds(): string[] {
-  try { return JSON.parse(localStorage.getItem(paidEventIdsKey) ?? '[]') as string[]; }
-  catch { return []; }
+  try {
+    return JSON.parse(localStorage.getItem(paidEventIdsKey) ?? '[]') as string[];
+  } catch {
+    return [];
+  }
 }
 
 function addPaidEventId(eventId: string) {
@@ -229,9 +235,13 @@ function loadRazorpayCheckout(): Promise<void> {
 
     if (existing) {
       existing.addEventListener('load', () => resolve(), { once: true });
-      existing.addEventListener('error', () => reject(new Error('Unable to load Razorpay Checkout')), {
-        once: true,
-      });
+      existing.addEventListener(
+        'error',
+        () => reject(new Error('Unable to load Razorpay Checkout')),
+        {
+          once: true,
+        },
+      );
       return;
     }
 
@@ -281,11 +291,11 @@ function createSessionFromOrder(
 function isPaymentSession(value: unknown): value is PaymentSession {
   return Boolean(
     value &&
-      typeof value === 'object' &&
-      'orderId' in value &&
-      'receiptId' in value &&
-      'status' in value &&
-      'attempts' in value,
+    typeof value === 'object' &&
+    'orderId' in value &&
+    'receiptId' in value &&
+    'status' in value &&
+    'attempts' in value,
   );
 }
 
@@ -458,7 +468,181 @@ function useRestoreableSession() {
   return { session, setSession, savedDraft, setSavedDraft };
 }
 
+// ── Admin ledger types ────────────────────────────────────────────────────────
+
+interface LedgerRow {
+  id: string;
+  orderId: string;
+  receiptId: string;
+  amount: number;
+  currency: string;
+  status: string;
+  applicantName: string;
+  email: string;
+  eventName: string;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+interface LedgerResponse {
+  rows: LedgerRow[];
+  total: number;
+  page: number;
+  pages: number;
+}
+
+const statusBadgeVariant: Record<string, 'active' | 'pending' | 'urgent' | 'inactive'> = {
+  success: 'active',
+  pending: 'pending',
+  processing: 'urgent',
+  failed: 'urgent',
+};
+
+function PaymentLedger() {
+  const [page, setPage] = useState(1);
+
+  const { data, isLoading, isError } = useQuery<LedgerResponse>({
+    queryKey: ['admin-payments', page],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: LedgerResponse }>(`/payments?page=${page}&limit=20`);
+      return data.data;
+    },
+    staleTime: 30_000,
+  });
+
+  return (
+    <div className="space-y-6 pb-8">
+      <PageHeader
+        title="Payment Ledger"
+        subtitle="All system transactions across every delegate and event"
+        actions={
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Banknote size={14} className="text-gold-400" />
+            {data ? `${data.total} total transactions` : 'Loading…'}
+          </div>
+        }
+      />
+
+      <Card className="glass-card border-white/[0.08]">
+        <CardHeader className="border-b border-white/[0.06] bg-white/[0.015]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl border border-gold-500/20 bg-gold-500/10 text-gold-400">
+              <ArrowUpDown className="h-4 w-4" />
+            </div>
+            <div>
+              <CardTitle className="text-base">All Payments</CardTitle>
+              <CardDescription>
+                Sorted by most recent. Page {page} of {data?.pages ?? '…'}.
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoading && (
+            <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+              Loading transactions…
+            </div>
+          )}
+          {isError && (
+            <div className="flex items-center justify-center py-16 text-sm text-red-400">
+              Failed to load payment data.
+            </div>
+          )}
+          {data && (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-white/[0.06] text-left text-[10px] uppercase tracking-[0.28em] text-muted-foreground">
+                    <th className="px-5 py-3">Applicant</th>
+                    <th className="px-5 py-3">Event</th>
+                    <th className="px-5 py-3">Order ID</th>
+                    <th className="px-5 py-3">Amount</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.rows.map((row) => (
+                    <tr
+                      key={row.id}
+                      className="border-b border-white/[0.04] transition-colors hover:bg-white/[0.02]"
+                    >
+                      <td className="px-5 py-3">
+                        <p className="font-medium text-foreground">{row.applicantName}</p>
+                        <p className="text-xs text-muted-foreground">{row.email}</p>
+                      </td>
+                      <td className="px-5 py-3 text-muted-foreground">{row.eventName}</td>
+                      <td className="px-5 py-3 font-mono text-xs text-muted-foreground">
+                        {row.orderId}
+                      </td>
+                      <td className="px-5 py-3 font-medium text-foreground">
+                        ₹{row.amount.toLocaleString()}
+                      </td>
+                      <td className="px-5 py-3">
+                        <Badge variant={statusBadgeVariant[row.status] ?? 'inactive'}>
+                          {row.status}
+                        </Badge>
+                      </td>
+                      <td className="px-5 py-3 text-xs text-muted-foreground">
+                        {row.paidAt ? formatDate(row.paidAt) : formatDate(row.createdAt)}
+                      </td>
+                    </tr>
+                  ))}
+                  {data.rows.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-12 text-center text-muted-foreground">
+                        No transactions found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+        {data && data.pages > 1 && (
+          <CardFooter className="flex items-center justify-between gap-3 border-t border-white/[0.06] p-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              Previous
+            </Button>
+            <span className="text-xs text-muted-foreground">
+              Page {page} of {data.pages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(data.pages, p + 1))}
+              disabled={page === data.pages}
+            >
+              Next
+            </Button>
+          </CardFooter>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+// ── Role-aware entry point ─────────────────────────────────────────────────────
+
 export function PaymentExperience() {
+  const { user } = useAuth();
+
+  if (user?.role === 'admin' || user?.role === 'super_admin') {
+    return <PaymentLedger />;
+  }
+
+  return <DelegatePaymentExperience />;
+}
+
+// ── Delegate checkout (original PaymentExperience, renamed) ───────────────────
+
+function DelegatePaymentExperience() {
   const queryClient = useQueryClient();
   const { data: committees = [] } = useCommittees();
   const { data: events = [] } = useEvents();
@@ -514,9 +698,7 @@ export function PaymentExperience() {
     return merged;
   }, [serverPaidEventIds]);
 
-  const availableCommittees = committees.filter(
-    (c: Committee) => !paidEventIds.has(c.eventId),
-  );
+  const availableCommittees = committees.filter((c: Committee) => !paidEventIds.has(c.eventId));
 
   const selectedCommittee =
     committees.find((committee: Committee) => committee.id === committeeId) ??
@@ -634,6 +816,7 @@ export function PaymentExperience() {
         window.localStorage.removeItem(`${paymentSessionKey}:locked`);
       }
       queryClient.invalidateQueries({ queryKey: ['delegates'] });
+      queryClient.invalidateQueries({ queryKey: ['committees'] });
     },
     onError: (error) => {
       if (isPaymentSession(error)) {
@@ -653,7 +836,9 @@ export function PaymentExperience() {
     async (values) => {
       setFormError('');
       if (hasActiveLock) {
-        setInfoMessage('A payment order is already active. Resume the saved session to avoid duplicate orders.');
+        setInfoMessage(
+          'A payment order is already active. Resume the saved session to avoid duplicate orders.',
+        );
         return;
       }
       try {
@@ -759,7 +944,9 @@ export function PaymentExperience() {
               </div>
               <div className="flex justify-between">
                 <span className="text-emerald-100/60">Committee</span>
-                <span>{session.committeeAbbr} — {session.committeeName}</span>
+                <span>
+                  {session.committeeAbbr} — {session.committeeName}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-emerald-100/60">Event</span>
@@ -889,12 +1076,17 @@ export function PaymentExperience() {
             icon={CreditCard}
           >
             {!selectedCommittee || !selectedEvent ? (
-              <p className="text-sm text-muted-foreground py-2">Select a committee above to see the fee breakdown.</p>
+              <p className="text-sm text-muted-foreground py-2">
+                Select a committee above to see the fee breakdown.
+              </p>
             ) : (
               <>
                 <div className="space-y-2">
                   <ValueRow label="Base Registration" value={`₹${fees.baseFee.toLocaleString()}`} />
-                  <ValueRow label={`Committee Fee (${selectedCommittee.abbr})`} value={`₹${fees.committeeFee.toLocaleString()}`} />
+                  <ValueRow
+                    label={`Committee Fee (${selectedCommittee.abbr})`}
+                    value={`₹${fees.committeeFee.toLocaleString()}`}
+                  />
                   <ValueRow label="Delegate Kit" value={`₹${fees.kitFee.toLocaleString()}`} />
                   <ValueRow label="Gateway Fee" value={`₹${fees.serviceFee.toLocaleString()}`} />
                   {fees.discount > 0 && (
@@ -908,7 +1100,9 @@ export function PaymentExperience() {
                     <p className="text-xs uppercase tracking-[0.28em] text-gold-300">Total Due</p>
                     <p className="text-sm text-gold-100">Including taxes and processing</p>
                   </div>
-                  <p className="text-2xl font-semibold text-gold-300">₹{fees.total.toLocaleString()}</p>
+                  <p className="text-2xl font-semibold text-gold-300">
+                    ₹{fees.total.toLocaleString()}
+                  </p>
                 </div>
               </>
             )}
@@ -987,9 +1181,7 @@ export function PaymentExperience() {
                 <ShieldCheck size={13} className="text-gold-400" />
                 <span>{infoMessage}</span>
               </div>
-              {formError && (
-                <p className="text-xs text-red-400 w-full">{formError}</p>
-              )}
+              {formError && <p className="text-xs text-red-400 w-full">{formError}</p>}
               <Button
                 onClick={onSubmit}
                 disabled={paymentMutation.isPending || hasActiveLock}
