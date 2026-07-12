@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Settings as SettingsIcon, Building2, Bell, Shield, Save, Check, TrendingUp } from 'lucide-react';
+import {
+  Settings as SettingsIcon,
+  Building2,
+  Bell,
+  Shield,
+  Save,
+  Check,
+  TrendingUp,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -79,13 +87,18 @@ function RoleUpgradeCard() {
             </div>
             <div>
               <CardTitle className="text-base text-foreground">Request Admin Role</CardTitle>
-              <CardDescription>Submit a request to be upgraded to admin — reviewed by super admin</CardDescription>
+              <CardDescription>
+                Submit a request to be upgraded to admin — reviewed by super admin
+              </CardDescription>
             </div>
           </div>
         </CardHeader>
         <CardContent className="p-5 space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="reason" className="text-xs font-mono uppercase tracking-widest text-muted-foreground">
+            <Label
+              htmlFor="reason"
+              className="text-xs font-mono uppercase tracking-widest text-muted-foreground"
+            >
               Reason (optional)
             </Label>
             <Textarea
@@ -108,7 +121,15 @@ function RoleUpgradeCard() {
             onClick={handleSubmit}
             disabled={status === 'loading' || status === 'success'}
           >
-            {status === 'loading' ? 'Submitting...' : status === 'success' ? <><Check size={13} /> Request Sent</> : 'Submit Request'}
+            {status === 'loading' ? (
+              'Submitting...'
+            ) : status === 'success' ? (
+              <>
+                <Check size={13} /> Request Sent
+              </>
+            ) : (
+              'Submit Request'
+            )}
           </Button>
         </CardContent>
       </Card>
