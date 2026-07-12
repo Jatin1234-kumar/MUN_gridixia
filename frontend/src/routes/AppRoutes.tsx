@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import LandingLayout from '@/layouts/LandingLayout';
 import DashboardLayout from '@/layouts/DashboardLayout';
 import { ProtectedRoute, RoleGuard } from '@/features/auth/ProtectedRoute';
@@ -47,7 +47,17 @@ export default function AppRoutes() {
             <Route path="/committees/:id" element={<CommitteeDetail />} />
             <Route path="/delegates" element={<Delegates />} />
             <Route path="/delegate-pass" element={<DelegatePass />} />
-            <Route path="/check-in" element={<CheckInScanner />} />
+
+            <Route
+              element={
+                <RoleGuard
+                  roles={['organizer']}
+                  fallback={<Navigate to="/delegate-pass" replace />}
+                />
+              }
+            >
+              <Route path="/check-in" element={<CheckInScanner />} />
+            </Route>
             <Route path="/certificate-vault" element={<CertificateVault />} />
             <Route path="/payments" element={<Payments />} />
             <Route path="/apply/:eventId" element={<Apply />} />
