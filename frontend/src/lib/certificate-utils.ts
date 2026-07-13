@@ -150,26 +150,6 @@ export function createDefaultCertificates(
       achievement: 'Delegate Recognition',
       level: 'bronze',
     },
-    {
-      id: 'diplomacy',
-      title: 'Diplomatic Excellence',
-      subtitle: 'Committee performance and strategic engagement',
-      state: lookupState('diplomacy') ?? (canIssue ? 'available' : 'locked'),
-      issuedAt: issuedAtFor('diplomacy'),
-      achievement: 'Excellence Medal',
-      level: 'silver',
-    },
-    {
-      id: 'distinction',
-      title: 'Distinguished Delegate',
-      subtitle: 'Top-tier conference recognition and achievement',
-      state:
-        lookupState('distinction') ??
-        (canIssue && hasAttendance ? 'issued' : canIssue ? 'available' : 'locked'),
-      issuedAt: issuedAtFor('distinction'),
-      achievement: 'Honor Award',
-      level: 'gold',
-    },
   ];
 
   return base.map((certificate) => {

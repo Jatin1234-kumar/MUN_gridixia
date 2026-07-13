@@ -27,7 +27,7 @@ export const AuthRepository = {
   },
 
   updateLastLogin(id: string | Types.ObjectId) {
-    return UserModel.findByIdAndUpdate(id, { lastLoginAt: new Date() }).exec();
+    return UserModel.findByIdAndUpdate(id, { lastLoginAt: new Date() }, { new: true }).exec();
   },
 
   createRoleRequest(userId: string | Types.ObjectId, requestedRole: RoleRequestTarget, reason?: string) {

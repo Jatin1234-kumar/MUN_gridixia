@@ -340,20 +340,22 @@ function CertificatePreview({
                 />
               </div>
 
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                <Button variant="outline" className="w-full justify-start" onClick={onDownload}>
-                  <Download size={14} />
-                  SVG
-                </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={onDownloadPdf}>
-                  <Download size={14} />
-                  PDF
-                </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={onShare}>
-                  <Share2 size={14} />
-                  Share
-                </Button>
-              </div>
+              {certificate.state !== 'locked' && (
+                <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                  <Button variant="outline" className="w-full justify-start" onClick={onDownload}>
+                    <Download size={14} />
+                    SVG
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start" onClick={onDownloadPdf}>
+                    <Download size={14} />
+                    PDF
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start" onClick={onShare}>
+                    <Share2 size={14} />
+                    Share
+                  </Button>
+                </div>
+              )}
 
               {certificate.state === 'available' && canIssue && (
                 <Button className="mt-3 w-full justify-start" onClick={onIssue}>
@@ -503,10 +505,11 @@ export default function CertificateVault() {
     setVaultLedger(nextLedger);
   }, [user]);
 
-  const issuedCount = certificates.filter((c) => c.state === 'issued').length;
-  const availableCount = certificates.filter((c) => c.state === 'available').length;
-  const lockedCount = certificates.filter((c) => c.state === 'locked').length;
-  const progress = (issuedCount / certificates.length) * 100;
+  const isLocked = selectedCertificate.state === 'locked';
+  const issuedCount = isLocked ? 0 : 1;
+  const availableCount = isLocked ? 0 : 1;
+  const lockedCount = isLocked ? 1 : 0;
+  const progress = isLocked ? 0 : 100;
 
   const handleDownload = () => {
     const verificationBase = window.location.origin;

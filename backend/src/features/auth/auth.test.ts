@@ -61,6 +61,7 @@ describe('AuthService.login', () => {
   it('returns tokens on valid credentials', async () => {
     mockRepo.findByEmail.mockResolvedValue(BASE_USER as never);
     mockRepo.updateLastLogin.mockResolvedValue(undefined as never);
+    mockRepo.findById.mockResolvedValue(BASE_USER as never);
     mockRepo.logAudit.mockResolvedValue(undefined as never);
 
     const result = await AuthService.login({ email: 'test@example.com', password: 'Password1' });

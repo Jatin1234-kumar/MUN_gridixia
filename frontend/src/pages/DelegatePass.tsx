@@ -20,42 +20,65 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatDate } from '@/lib/utils';
-import { readJson } from '@/lib/storage';
+import api from '@/lib/api';
 import { useAuth } from '@/features/auth/AuthContext';
-import type { DelegateApplicationDraft, PaymentSession } from '@/types';
 
-const delegateDraftKey  = (uid: string) => `mun-gridixia:delegate-application-draft:v1:${uid}`;
-const paymentSessionKey = (uid: string) => `mun-gridixia:payment-session:v1:${uid}`;
-const checkInLedgerKey  = (uid: string) => `mun-gridixia:checkin-ledger:v1:${uid}`;
-
-type PassState = {
-  draft?: Partial<DelegateApplicationDraft>;
-  session?: PaymentSession;
+type PassData = {
+  ticketNumber: string | null;
+  registrationNumber: string;
+  registrationStatus: string;
+  paymentStatus: string;
+  assignedCommittee: string | null;
+  committeeAbbr: string | null;
+  assignedCountry: string | null;
+  submittedAt: string;
+  qrToken: string | null;
+  ticketStatus: string | null;
 };
 
 type PassStatus = 'valid' | 'pending' | 'used' | 'expired';
 
-function usePassState(uid: string) {
-  const [state, setState] = useState<PassState | null>(null);
+function usePassData(isAuthenticated: boolean, userId?: string) {
+  const [data, setData] = useState<PassData | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setState({
-      draft: readJson<DelegateApplicationDraft>(delegateDraftKey(uid)),
-      session: readJson<PaymentSession>(paymentSessionKey(uid)),
-    });
-  }, [uid]);
+    if (!isAuthenticated || !userId) {
+      setData(null);
+      setLoading(false);
+      return;
+    }
 
-  return state;
+    const controller = new AbortController();
+    setData(null);
+    setLoading(true);
+
+    // A new login/user identity always triggers a network request. The timestamp
+    // and no-cache directives prevent a restored browser/proxy response from
+    // recreating the pending pass state.
+    api.get<{ data: PassData }>(`/delegates/pass?fresh=${Date.now()}`, {
+      signal: controller.signal,
+      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+    })
+      .then((res) => setData(res.data.data))
+      .catch((error) => {
+        if (error.name !== 'CanceledError') setData(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [isAuthenticated, userId]);
+
+  return { data, loading };
 }
 
-function getPassStatus(uid: string, session?: PaymentSession): PassStatus {
-  if (!session?.orderId || !session?.committeeName) return 'pending';
-  if (session.status !== 'success') return 'pending';
-
-  const ledger = readJson<Record<string, unknown>>(checkInLedgerKey(uid)) ?? {};
-  const ticket = `DP-${session.orderId.slice(-8).toUpperCase()}`;
-  if (ledger[ticket]) return 'used';
-
+function getPassStatus(passData: PassData | null): PassStatus {
+  if (!passData?.ticketNumber) return 'pending';
+  if (passData.paymentStatus !== 'paid') return 'pending';
+  if (passData.ticketStatus === 'used') return 'used';
+  if (passData.ticketStatus === 'cancelled' || passData.ticketStatus === 'revoked') return 'expired';
   return 'valid';
 }
 
@@ -119,32 +142,25 @@ function AllocationField({
 }
 
 export default function DelegatePass() {
-  const { user } = useAuth();
-  const uid = user?.id ?? 'anonymous';
-  const state = usePassState(uid);
+  const { user, isAuthenticated } = useAuth();
+  const { data: passData, loading } = usePassData(isAuthenticated, user?.id);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const ticket = useMemo(() => {
-    const orderId = state?.session?.orderId;
-    return orderId ? `DP-${orderId.slice(-8).toUpperCase()}` : 'DP-PENDING';
-  }, [state?.session?.orderId]);
+  const ticket = passData?.ticketNumber ?? 'DP-PENDING';
+  const country = passData?.assignedCountry ?? 'Pending assignment';
+  const committee = passData?.assignedCommittee ?? 'Awaiting committee';
+  const delegateName = user?.email ?? 'Delegate Pending';
+  const allocationDate = passData?.submittedAt ?? new Date().toISOString();
+  const qrValue = useMemo(
+    () => [ticket, committee, country, delegateName].join('|'),
+    [ticket, committee, country, delegateName],
+  );
 
-  const country = state?.draft?.countryPreference?.firstChoiceCountry || 'Pending assignment';
-  const committee =
-    state?.session?.committeeName ||
-    state?.draft?.committeePreference?.preferredCommitteeName ||
-    'Awaiting committee';
-  const delegateName =
-    state?.session?.applicantName || state?.draft?.personal?.fullName || user?.email || 'Delegate Pending';
-  const allocationDate = state?.session?.createdAt || new Date().toISOString();
-  const qrValue = [ticket, committee, country, delegateName].join('|');
-
-  const loading = !state;
-  const isPending =
-    !state?.session?.orderId ||
-    !state?.session?.committeeName ||
-    !state?.draft?.countryPreference?.firstChoiceCountry;
-  const passStatus = getPassStatus(uid, state?.session);
+  const isApprovedRegistration = ['approved', 'confirmed', 'checked_in'].includes(
+    passData?.registrationStatus ?? '',
+  );
+  const isPending = passData?.paymentStatus !== 'paid' || !isApprovedRegistration;
+  const passStatus = getPassStatus(passData);
   const statusConfig = passStatusConfig[passStatus];
 
   const handlePrint = () => {
@@ -152,11 +168,11 @@ export default function DelegatePass() {
   };
 
   const handleDownload = async () => {
-    if (!state?.draft || !state?.session) return;
+    if (!passData) return;
     setIsDownloading(true);
 
     try {
-      const passSvg = buildPassMarkup({ draft: state.draft, session: state.session });
+      const passSvg = buildPassMarkup();
       const passBlob = new Blob([passSvg], { type: 'image/svg+xml;charset=utf-8' });
       const passUrl = URL.createObjectURL(passBlob);
       const passImage = new Image();
@@ -209,18 +225,13 @@ export default function DelegatePass() {
     }
   };
 
-  function buildPassMarkup(deps: Required<Pick<PassState, 'draft' | 'session'>>) {
-    const name = deps.draft.personal?.fullName || 'Pending Delegate';
-    const countryVal = deps.draft.countryPreference?.firstChoiceCountry || 'Pending';
-    const committeeVal =
-      deps.session.committeeName ||
-      deps.draft.committeePreference?.preferredCommitteeName ||
-      'Unassigned';
-    const ticketVal = deps.session.orderId
-      ? `DP-${deps.session.orderId.slice(-8).toUpperCase()}`
-      : 'DP-PENDING';
-    const dateVal = deps.session.createdAt || new Date().toISOString();
-    const qrVal = [ticketVal, committeeVal, countryVal, name].join('|');
+  function buildPassMarkup() {
+    const name = delegateName;
+    const countryVal = country;
+    const committeeVal = committee;
+    const ticketVal = ticket;
+    const dateVal = allocationDate;
+    const qrVal = qrValue;
 
     const qrDataUrl = generateQrDataUrl(qrVal);
 
@@ -375,7 +386,7 @@ export default function DelegatePass() {
                     Session
                   </div>
                   <p className="mt-3 text-sm text-white">
-                    {state.session?.receiptId || 'Pending receipt'}
+                    {passData?.registrationNumber || 'Pending receipt'}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
@@ -441,7 +452,7 @@ export default function DelegatePass() {
               <SummaryRow label="Committee" value={committee} />
               <SummaryRow label="Country" value={country} />
               <SummaryRow label="Ticket" value={ticket} />
-              <SummaryRow label="Receipt" value={state.session?.receiptId || 'Pending'} />
+              <SummaryRow label="Receipt" value={passData?.registrationNumber || 'Pending'} />
               <SummaryRow label="Status" value={statusConfig.label} />
             </CardContent>
           </Card>

@@ -1,10 +1,12 @@
 import { Types } from 'mongoose';
+import { randomBytes } from 'crypto';
 import { AuditLogModel } from '../../models/AuditLog';
 import { config } from '../../config';
 import { AttendanceModel } from '../../models/Attendance';
 import { CommitteeModel } from '../../models/Committee';
 import { EventModel } from '../../models/Event';
 import { PaymentModel, type PaymentDocument } from '../../models/Payment';
+import { TicketModel } from '../../models/Ticket';
 import { RegistrationModel, type RegistrationDocument } from '../../models/Registration';
 import { AppError } from '../../utils/AppError';
 import {
@@ -25,6 +27,7 @@ export interface CreatePaymentOrderInput {
   paymentMethod: 'card' | 'upi' | 'netbanking';
   billingName: string;
   couponCode?: string;
+  applicationDraft?: Record<string, unknown>;
   ipAddress?: string;
   userAgent?: string;
 }
@@ -107,6 +110,7 @@ export const paymentService = {
         preferredMethod: input.paymentMethod,
         feeBreakdown: fees,
         razorpayOrderStatus: order.status,
+        applicationDraft: input.applicationDraft ?? null,
       },
     });
 
@@ -291,8 +295,12 @@ export const paymentService = {
 
     return {
       applicantName: (payment?.metadata?.applicantName as string | undefined) ?? null,
+      billingName: (payment?.metadata?.billingName as string | undefined) ?? null,
+      applicantEmail: (payment?.metadata?.email as string | undefined) ?? null,
       committeeName: committee?.name ?? null,
       committeeAbbr: committee?.abbr ?? null,
+      committeeId: registration.committeeId ? String(registration.committeeId) : null,
+      applicationDraft: (payment?.metadata?.applicationDraft as Record<string, unknown> | undefined) ?? null,
       paymentVerified: registration.paymentStatus === 'paid',
       checkedIn: attendance?.status === 'present',
       registrationStatus: registration.status,
@@ -440,7 +448,30 @@ async function capturePayment(
     $set: { paymentStatus: 'paid', status: 'confirmed' },
   }).exec();
 
+  await ensureTicketForPaidRegistration(payment);
+
   return payment;
+}
+
+/** Creates the delegate pass once, regardless of checkout/webhook retries. */
+async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promise<void> {
+  await TicketModel.updateOne(
+    { registrationId: payment.registrationId, deletedAt: null },
+    {
+      $setOnInsert: {
+        registrationId: payment.registrationId,
+        userId: payment.userId,
+        eventId: payment.eventId,
+        ticketNumber: generateTicketNumber(),
+        qrToken: randomBytes(24).toString('hex'),
+        // The QR worker can replace this placeholder with a generated data URL.
+        qrCode: 'pending-qr-generation',
+        status: 'issued',
+        issuedAt: new Date(),
+      },
+    },
+    { upsert: true },
+  ).exec();
 }
 
 async function markPaymentFailed(
@@ -530,6 +561,10 @@ function toPaise(amountInRupees: number): number {
 
 function generateReceipt(): string {
   return `rcpt_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function generateTicketNumber(): string {
+  return `DP-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`.toUpperCase();
 }
 
 function generateRegistrationNumber(): string {

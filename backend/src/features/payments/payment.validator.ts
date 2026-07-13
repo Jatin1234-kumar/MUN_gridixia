@@ -8,6 +8,7 @@ export const createPaymentOrderSchema = z.object({
     paymentMethod: z.enum(['card', 'upi', 'netbanking']),
     billingName: z.string().min(2).max(120),
     couponCode: z.string().max(64).optional().default(''),
+    applicationDraft: z.record(z.unknown()).optional(),
   }),
 });
 

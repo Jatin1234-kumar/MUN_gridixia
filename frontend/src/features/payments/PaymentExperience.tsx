@@ -4,7 +4,7 @@ import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/features/auth/AuthContext';
 
 declare global {
@@ -72,6 +72,11 @@ const paymentSchema = z.object({
 });
 
 type PaymentFormValues = z.infer<typeof paymentSchema>;
+
+type PaymentPrefill = Pick<
+  PaymentFormValues,
+  'applicantName' | 'email' | 'committeeId' | 'billingName' | 'paymentMethod' | 'couponCode'
+>;
 
 type PaymentFlowStatus = PaymentStatus;
 
@@ -188,13 +193,33 @@ function clearPaymentStorage(uid: string) {
 function getSeedValues(uid: string, userEmail: string): Partial<PaymentFormValues> {
   const delegateDraft = readJson<DelegateApplicationDraft>(delegateDraftKey(uid));
   const paymentDraft  = readJson<Partial<PaymentFormValues>>(paymentDraftKey(uid));
+  const firstNonEmpty = (...values: Array<string | undefined>) =>
+    values.find((value) => Boolean(value?.trim())) ?? '';
 
   return {
     ...paymentDraft,
-    applicantName: paymentDraft?.applicantName ?? delegateDraft?.personal?.fullName ?? '',
-    email:         paymentDraft?.email         ?? delegateDraft?.personal?.email    ?? userEmail,
-    committeeId:   paymentDraft?.committeeId   ?? delegateDraft?.committeePreference?.preferredCommitteeId ?? '',
-    billingName:   paymentDraft?.billingName   ?? delegateDraft?.personal?.fullName ?? '',
+    applicantName: firstNonEmpty(paymentDraft?.applicantName, delegateDraft?.personal?.fullName),
+    email:         firstNonEmpty(paymentDraft?.email, delegateDraft?.personal?.email, userEmail),
+    committeeId:   firstNonEmpty(paymentDraft?.committeeId, delegateDraft?.committeePreference?.preferredCommitteeId),
+    billingName:   firstNonEmpty(paymentDraft?.billingName, delegateDraft?.personal?.fullName),
+  };
+}
+
+function getPaymentPrefill(state: unknown): Partial<PaymentPrefill> | undefined {
+  if (!state || typeof state !== 'object' || !('paymentPrefill' in state)) return undefined;
+  const prefill = (state as { paymentPrefill?: unknown }).paymentPrefill;
+  if (!prefill || typeof prefill !== 'object') return undefined;
+
+  const value = prefill as Record<string, unknown>;
+  return {
+    applicantName: typeof value.applicantName === 'string' ? value.applicantName : undefined,
+    email: typeof value.email === 'string' ? value.email : undefined,
+    committeeId: typeof value.committeeId === 'string' ? value.committeeId : undefined,
+    billingName: typeof value.billingName === 'string' ? value.billingName : undefined,
+    paymentMethod: ['card', 'upi', 'netbanking'].includes(String(value.paymentMethod))
+      ? value.paymentMethod as PaymentFormValues['paymentMethod']
+      : undefined,
+    couponCode: typeof value.couponCode === 'string' ? value.couponCode : undefined,
   };
 }
 
@@ -284,6 +309,35 @@ function createSessionFromOrder(
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };
+}
+
+/** Safely coerce any value to a display string — prevents [object Object] in JSX. */
+function toDisplayString(value: unknown, fallback = '—'): string {
+  if (value == null) return fallback;
+  if (typeof value === 'string') {
+    const normalized = value.trim();
+    return normalized && normalized !== '[object Object]' ? normalized : fallback;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  // ObjectId or object leaked from Mongoose — extract known id fields
+  if (typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    const identifier = obj.id ?? obj._id ?? obj.receiptId ?? obj.transactionId ?? obj.url ?? obj.reference;
+    if (identifier !== value) {
+      const displayIdentifier = toDisplayString(identifier, '');
+      if (displayIdentifier) return displayIdentifier;
+    }
+
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized && serialized !== '{}') return serialized;
+    } catch {
+      // Circular or otherwise non-serializable values fall through to the safe default.
+    }
+  }
+  return fallback;
 }
 
 function isPaymentSession(value: unknown): value is PaymentSession {
@@ -437,11 +491,44 @@ function SectionCard({
   );
 }
 
+interface VaultStatus {
+  applicantName: string | null;
+  billingName: string | null;
+  applicantEmail: string | null;
+  committeeName: string | null;
+  committeeAbbr: string | null;
+  committeeId: string | null;
+  paymentVerified: boolean;
+  checkedIn: boolean;
+  registrationStatus: string;
+}
+
+interface RegistrationStatus {
+  registrationNumber: string;
+  status: string;
+  paymentStatus: string;
+  committeeId: string | null;
+  eventId: string;
+  isConfirmed: boolean;
+}
+
+/** Returns true if a stored PaymentSession has any non-string fields that would
+ *  render as [object Object]. Corrupt sessions must be wiped before use. */
+function isCorruptSession(session: PaymentSession): boolean {
+  return (
+    typeof session.receiptId !== 'string' ||
+    typeof session.orderId !== 'string' ||
+    typeof session.committeeId !== 'string'
+  );
+}
+
 function useRestoreableSession(uid: string) {
   const [session, setSession] = useState<PaymentSession | undefined>(() => {
     const saved = readJson<PaymentSession>(paymentSessionKey(uid));
-    // Don't restore a completed session — user is here to make a new payment
-    if (saved?.status === 'success') {
+    if (!saved) return undefined;
+    // Wipe any session that has non-string fields — these are corrupt entries
+    // from a previous bug where Mongoose ObjectId objects leaked into storage.
+    if (isCorruptSession(saved)) {
       clearPaymentStorage(uid);
       return undefined;
     }
@@ -642,6 +729,7 @@ export function PaymentExperience() {
 
 function DelegatePaymentExperience() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const { user } = useAuth();
   const uid = user?.id ?? 'anonymous';
   const { data: committees = [] } = useCommittees();
@@ -650,7 +738,67 @@ function DelegatePaymentExperience() {
   const [infoMessage, setInfoMessage] = useState('Ready to create a secure order.');
   const [lastRecoveryAction, setLastRecoveryAction] = useState('');
   const [formError, setFormError] = useState('');
-  const seedValues = useMemo(() => getSeedValues(uid, user?.email ?? ''), [uid, user?.email]);
+  const incomingPrefill = useMemo(() => getPaymentPrefill(location.state), [location.key]);
+  const seedValues = useMemo(
+    () => ({ ...getSeedValues(uid, user?.email ?? ''), ...incomingPrefill }),
+    [uid, user?.email, incomingPrefill],
+  );
+
+  // ── Backend vault hydration ──────────────────────────────────────────────
+  const { data: vaultStatus } = useQuery<VaultStatus | null>({
+    queryKey: ['my-vault-status', uid],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: VaultStatus | null }>('/payments/my-vault-status');
+      return data.data;
+    },
+    staleTime: 60_000,
+    enabled: uid !== 'anonymous',
+  });
+
+  const { data: registrationStatus } = useQuery<RegistrationStatus | null>({
+    queryKey: ['my-registration-status', uid],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: RegistrationStatus | null }>('/payments/my-registration-status');
+      return data.data;
+    },
+    staleTime: 60_000,
+    enabled: uid !== 'anonymous',
+  });
+
+  useEffect(() => {
+    if (!vaultStatus?.paymentVerified) return;
+    if (session?.status === 'success') return;
+    // Clear any corrupt localStorage remnant before writing the clean synthesized session.
+    clearPaymentStorage(uid);
+    const safeReceipt = registrationStatus?.registrationNumber ?? 'Confirmed';
+    const safeCommitteeId = typeof vaultStatus.committeeId === 'string'
+      ? vaultStatus.committeeId
+      : '';
+    setSession((prev) => ({
+      orderId:       prev?.orderId      ?? 'DB-CONFIRMED',
+      receiptId:     prev?.receiptId    ?? safeReceipt,
+      registrationId: prev?.registrationId,
+      status:        'success',
+      attempts:      prev?.attempts     ?? 1,
+      applicantName: vaultStatus.applicantName  ?? prev?.applicantName  ?? user?.email ?? '',
+      email:         vaultStatus.applicantEmail ?? prev?.email          ?? user?.email ?? '',
+      committeeId:   safeCommitteeId            ?? prev?.committeeId    ?? '',
+      committeeName: vaultStatus.committeeName  ?? prev?.committeeName  ?? '',
+      committeeAbbr: vaultStatus.committeeAbbr  ?? prev?.committeeAbbr  ?? '',
+      eventId:       prev?.eventId      ?? '',
+      eventName:     prev?.eventName    ?? '',
+      eventDate:     prev?.eventDate    ?? '',
+      paymentMethod: prev?.paymentMethod ?? 'card',
+      amount:        prev?.amount        ?? 0,
+      baseFee:       prev?.baseFee       ?? 0,
+      committeeFee:  prev?.committeeFee  ?? 0,
+      serviceFee:    prev?.serviceFee    ?? 0,
+      tax:           prev?.tax           ?? 0,
+      discount:      prev?.discount      ?? 0,
+      createdAt:     prev?.createdAt     ?? new Date().toISOString(),
+      updatedAt:     new Date().toISOString(),
+    }));
+  }, [vaultStatus, registrationStatus, session?.status]);
 
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -658,6 +806,10 @@ function DelegatePaymentExperience() {
     mode: 'onTouched',
     shouldUnregister: false,
   });
+
+  useEffect(() => {
+    form.reset({ ...defaultValues, ...seedValues });
+  }, [form, seedValues]);
 
   const watched = useWatch({ control: form.control });
   const committeeId = form.watch('committeeId');
@@ -723,6 +875,7 @@ function DelegatePaymentExperience() {
         paymentMethod: values.paymentMethod,
         billingName: values.billingName,
         couponCode: values.couponCode ?? '',
+        applicationDraft: readJson<Record<string, unknown>>(delegateDraftKey(uid)) ?? undefined,
       });
 
       const order = data.data;
@@ -906,6 +1059,20 @@ function DelegatePaymentExperience() {
   };
 
   if (session?.status === 'success') {
+    // All display values go through toDisplayString as a final safety net.
+    const displayOrderId = session.orderId !== 'DB-CONFIRMED'
+      ? toDisplayString(session.orderId)
+      : 'Confirmed in database';
+    const displayCommittee = session.committeeName
+      ? `${toDisplayString(session.committeeAbbr)} — ${toDisplayString(session.committeeName)}`
+      : toDisplayString(vaultStatus?.committeeName, 'Confirmed');
+    const displayAmount = session.amount > 0
+      ? `₹${session.amount.toLocaleString()}`
+      : 'Confirmed';
+    const displayEvent = toDisplayString(session.eventName, 'Confirmed');
+    const displayName = toDisplayString(
+      session.applicantName || vaultStatus?.applicantName || user?.email,
+    );
     return (
       <div className="space-y-6 pb-8">
         <PageHeader
@@ -933,28 +1100,36 @@ function DelegatePaymentExperience() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-emerald-100/80">
-            <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-4 py-3 space-y-2">
-              <div className="flex justify-between">
-                <span className="text-emerald-100/60">Receipt</span>
-                <span className="font-mono">{session.receiptId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-emerald-100/60">Order ID</span>
-                <span className="font-mono">{session.orderId}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-emerald-100/60">Committee</span>
-                <span>
-                  {session.committeeAbbr} — {session.committeeName}
-                </span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-emerald-100/60">Event</span>
-                <span>{session.eventName}</span>
-              </div>
-              <div className="flex justify-between font-semibold border-t border-emerald-500/20 pt-2">
-                <span className="text-emerald-100/60">Amount Paid</span>
-                <span className="text-emerald-300">₹{session.amount.toLocaleString()}</span>
+            <div className="divide-y divide-emerald-500/10 rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
+              {([
+                { label: 'Applicant',   value: displayName,      mono: false },
+                {
+                  label: 'Receipt',
+                  value: toDisplayString(
+                    session.receiptId !== 'DB-CONFIRMED' ? session.receiptId : null,
+                    toDisplayString(registrationStatus?.registrationNumber, 'Confirmed'),
+                  ),
+                  mono: true,
+                },
+                { label: 'Order ID',    value: displayOrderId,   mono: true  },
+                { label: 'Committee',   value: displayCommittee, mono: false },
+                { label: 'Event',       value: displayEvent,     mono: false },
+              ] as const).map(({ label, value, mono }) => (
+                <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5">
+                  <span className="shrink-0 text-emerald-100/60">{label}</span>
+                  <span
+                    className={cn(
+                      'min-w-0 break-all text-right',
+                      mono && 'font-mono text-xs',
+                    )}
+                  >
+                    {value}
+                  </span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between gap-4 border-t border-emerald-500/20 px-4 py-2.5 font-semibold">
+                <span className="shrink-0 text-emerald-100/60">Amount Paid</span>
+                <span className="text-emerald-300">{displayAmount}</span>
               </div>
             </div>
           </CardContent>
@@ -1280,7 +1455,7 @@ function DelegatePaymentExperience() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2 text-sm text-emerald-100/80">
-                <p>Receipt: {session.receiptId}</p>
+                <p>Receipt: {toDisplayString(session.receiptId, 'Confirmed')}</p>
                 <p>
                   You can safely leave this page or continue to another section of the dashboard.
                 </p>

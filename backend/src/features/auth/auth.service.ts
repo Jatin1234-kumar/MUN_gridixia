@@ -161,24 +161,31 @@ export const AuthService = {
     if (!valid) throw new AppError(401, 'Invalid credentials');
 
     await AuthRepository.updateLastLogin(user._id);
+    // Re-read by id immediately before signing so the session reflects the
+    // current account role/status even if it changed during credential checks.
+    // Delegate/ticket fields stay out of the JWT and are read from /delegates/pass.
+    const currentUser = await AuthRepository.findById(user._id);
+    if (!currentUser || currentUser.status === 'suspended') {
+      throw new AppError(401, 'Invalid credentials');
+    }
     await AuthRepository.logAudit({
-      actorId: user._id,
-      actorRole: user.role,
-      entityId: user.id as string,
+      actorId: currentUser._id,
+      actorRole: currentUser.role,
+      entityId: currentUser.id as string,
       action: 'login',
       ipAddress: data.ipAddress,
       userAgent: data.userAgent,
     });
 
     const payload: TokenPayload = {
-      sub: user.id as string,
-      role: user.role,
-      ver: user.refreshTokenVersion,
+      sub: currentUser.id as string,
+      role: currentUser.role,
+      ver: currentUser.refreshTokenVersion,
     };
     return {
       accessToken: signAccess(payload),
       refreshToken: signRefresh(payload),
-      user: { id: user.id as string, email: user.email, role: user.role },
+      user: { id: currentUser.id as string, email: currentUser.email, role: currentUser.role },
     };
   },
 
