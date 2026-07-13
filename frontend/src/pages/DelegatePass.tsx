@@ -38,11 +38,16 @@ type PassData = {
 
 type PassStatus = 'valid' | 'pending' | 'used' | 'expired';
 
-function usePassData(isAuthenticated: boolean, userId?: string) {
+function usePassData(authLoading: boolean, isAuthenticated: boolean, userId?: string) {
   const [data, setData] = useState<PassData | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Keep the skeleton visible while auth is still hydrating from the refresh
+    // cookie. Without this guard the hook sees isAuthenticated=false on first
+    // render and immediately resolves to null, flashing the "Pending" state.
+    if (authLoading) return;
+
     if (!isAuthenticated || !userId) {
       setData(null);
       setLoading(false);
@@ -53,13 +58,11 @@ function usePassData(isAuthenticated: boolean, userId?: string) {
     setData(null);
     setLoading(true);
 
-    // A new login/user identity always triggers a network request. The timestamp
-    // and no-cache directives prevent a restored browser/proxy response from
-    // recreating the pending pass state.
-    api.get<{ data: PassData }>(`/delegates/pass?fresh=${Date.now()}`, {
-      signal: controller.signal,
-      headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-    })
+    api
+      .get<{ data: PassData }>(`/delegates/pass?t=${Date.now()}`, {
+        signal: controller.signal,
+        headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+      })
       .then((res) => setData(res.data.data))
       .catch((error) => {
         if (error.name !== 'CanceledError') setData(null);
@@ -69,16 +72,17 @@ function usePassData(isAuthenticated: boolean, userId?: string) {
       });
 
     return () => controller.abort();
-  }, [isAuthenticated, userId]);
+  }, [authLoading, isAuthenticated, userId]);
 
-  return { data, loading };
+  return { data, loading: authLoading || loading };
 }
 
 function getPassStatus(passData: PassData | null): PassStatus {
   if (!passData?.ticketNumber) return 'pending';
   if (passData.paymentStatus !== 'paid') return 'pending';
   if (passData.ticketStatus === 'used') return 'used';
-  if (passData.ticketStatus === 'cancelled' || passData.ticketStatus === 'revoked') return 'expired';
+  if (passData.ticketStatus === 'cancelled' || passData.ticketStatus === 'revoked')
+    return 'expired';
   return 'valid';
 }
 
@@ -142,8 +146,8 @@ function AllocationField({
 }
 
 export default function DelegatePass() {
-  const { user, isAuthenticated } = useAuth();
-  const { data: passData, loading } = usePassData(isAuthenticated, user?.id);
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+  const { data: passData, loading } = usePassData(authLoading, isAuthenticated, user?.id);
   const [isDownloading, setIsDownloading] = useState(false);
 
   const ticket = passData?.ticketNumber ?? 'DP-PENDING';
