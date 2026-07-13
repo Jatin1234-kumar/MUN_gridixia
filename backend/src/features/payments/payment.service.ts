@@ -1,6 +1,7 @@
 import { Types } from 'mongoose';
 import { randomBytes } from 'crypto';
 import { AuditLogModel } from '../../models/AuditLog';
+import { dispatchQrJob } from '../../queues';
 import { config } from '../../config';
 import { AttendanceModel } from '../../models/Attendance';
 import { CommitteeModel } from '../../models/Committee';
@@ -263,8 +264,7 @@ export const paymentService = {
       paymentStatus: registration.paymentStatus,
       committeeId: registration.committeeId ? String(registration.committeeId) : null,
       eventId: String(registration.eventId),
-      isConfirmed:
-        registration.status === 'confirmed' && registration.paymentStatus === 'paid',
+      isConfirmed: registration.status === 'confirmed' && registration.paymentStatus === 'paid',
     };
   },
 
@@ -300,7 +300,8 @@ export const paymentService = {
       committeeName: committee?.name ?? null,
       committeeAbbr: committee?.abbr ?? null,
       committeeId: registration.committeeId ? String(registration.committeeId) : null,
-      applicationDraft: (payment?.metadata?.applicationDraft as Record<string, unknown> | undefined) ?? null,
+      applicationDraft:
+        (payment?.metadata?.applicationDraft as Record<string, unknown> | undefined) ?? null,
       paymentVerified: registration.paymentStatus === 'paid',
       checkedIn: attendance?.status === 'present',
       registrationStatus: registration.status,
@@ -455,23 +456,56 @@ async function capturePayment(
 
 /** Creates the delegate pass once, regardless of checkout/webhook retries. */
 async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promise<void> {
-  await TicketModel.updateOne(
-    { registrationId: payment.registrationId, deletedAt: null },
+  // updateOne/upsert bypasses Mongoose schema defaults — soft-delete fields
+  // must be written explicitly so the pre-find hook ({ isDeleted: false,
+  // deletedAt: null }) can locate the document on subsequent reads.
+  const qrToken = randomBytes(24).toString('hex');
+  const ticketNumber = generateTicketNumber();
+
+  const result = await TicketModel.findOneAndUpdate(
+    { registrationId: payment.registrationId, isDeleted: false, deletedAt: null },
     {
       $setOnInsert: {
         registrationId: payment.registrationId,
         userId: payment.userId,
         eventId: payment.eventId,
-        ticketNumber: generateTicketNumber(),
-        qrToken: randomBytes(24).toString('hex'),
-        // The QR worker can replace this placeholder with a generated data URL.
+        ticketNumber,
+        qrToken,
         qrCode: 'pending-qr-generation',
         status: 'issued',
         issuedAt: new Date(),
+        // Soft-delete defaults — not applied automatically on raw updateOne upserts.
+        isDeleted: false,
+        deletedAt: null,
+        deletedBy: null,
       },
     },
-    { upsert: true },
-  ).exec();
+    { upsert: true, new: false, projection: { _id: 1, ticketNumber: 1, qrToken: 1 } },
+  )
+    .lean()
+    .exec();
+
+  // result is null when the document was just inserted (new: false returns the
+  // pre-update doc, which doesn't exist on insert). Dispatch QR generation only
+  // for the winning insert — skip if the ticket already existed.
+  if (result === null) {
+    const inserted = await TicketModel.findOne(
+      { registrationId: payment.registrationId, isDeleted: false, deletedAt: null },
+      { _id: 1, ticketNumber: 1, qrToken: 1 },
+    )
+      .lean()
+      .exec();
+
+    if (inserted) {
+      await dispatchQrJob({
+        ticketId: String(inserted._id),
+        ticketNumber: inserted.ticketNumber,
+        qrToken: inserted.qrToken,
+        userId: String(payment.userId),
+        eventId: String(payment.eventId),
+      });
+    }
+  }
 }
 
 async function markPaymentFailed(

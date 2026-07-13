@@ -13,47 +13,61 @@ import type { CreateDelegateDto, UpdateDelegateDto } from '../validators/delegat
 
 export const delegateController = {
   getMyPass: asyncHandler(async (req, res) => {
-    const userId = new Types.ObjectId((req as AuthenticatedRequest).user.sub);
+    const rawSub = (req as AuthenticatedRequest).user?.sub;
+    if (!rawSub || !Types.ObjectId.isValid(rawSub)) {
+      throw new AppError(401, 'Invalid or missing user identity in token');
+    }
+    const userId = new Types.ObjectId(rawSub);
 
-    const fields = { status: 1, paymentStatus: 1, committeeId: 1, eventId: 1, registrationNumber: 1, submittedAt: 1 };
-    // A delegate may have a newer unfinished application after an earlier paid
-    // registration. The pass must bind to the paid registration, not blindly to
-    // the newest draft.
-    const registration = await RegistrationModel.findOne(
-      { userId, deletedAt: null, paymentStatus: 'paid' },
-      fields,
-    ).sort({ updatedAt: -1 }).lean()
-      ?? await RegistrationModel.findOne({ userId, deletedAt: null }, fields).sort({ updatedAt: -1 }).lean();
+    const fields = {
+      status: 1,
+      paymentStatus: 1,
+      committeeId: 1,
+      eventId: 1,
+      registrationNumber: 1,
+      submittedAt: 1,
+    };
+    // Prefer the most-recently-updated paid registration; fall back to any
+    // active registration so a delegate mid-application still sees their pass.
+    const registration =
+      (await RegistrationModel.findOne({ userId, paymentStatus: 'paid' }, fields)
+        .sort({ updatedAt: -1 })
+        .lean()) ??
+      (await RegistrationModel.findOne({ userId }, fields).sort({ updatedAt: -1 }).lean());
 
     if (!registration) throw new AppError(404, 'No registration found');
 
     const [existingTicket, committee, payment] = await Promise.all([
       TicketModel.findOne(
-        { registrationId: registration._id, deletedAt: null },
+        { registrationId: registration._id },
         { ticketNumber: 1, status: 1, qrToken: 1 },
       ).lean(),
       registration.committeeId
         ? CommitteeModel.findById(registration.committeeId, { name: 1, abbr: 1 }).lean()
-        : null,
-      PaymentModel.findOne(
-        { registrationId: registration._id, deletedAt: null },
-        { metadata: 1 },
-      ).sort({ createdAt: -1 }).lean(),
+        : Promise.resolve(null),
+      PaymentModel.findOne({ registrationId: registration._id }, { metadata: 1 })
+        .sort({ createdAt: -1 })
+        .lean(),
     ]);
 
     const assignedCountry = getPersistedCountry(payment?.metadata);
 
     // Repair passes issued before ticket creation was wired into payment capture.
-    // This is idempotent and only runs for an already paid registration.
-    const ticket = registration.paymentStatus === 'paid' && !existingTicket
-      ? await TicketModel.findOneAndUpdate(
-          { registrationId: registration._id, deletedAt: null },
+    // Uses findOneAndUpdate+upsert so concurrent requests are safe against the
+    // unique index on registrationId — a duplicate-key race just re-reads the
+    // winner instead of throwing a 500.
+    let ticket = existingTicket;
+    if (registration.paymentStatus === 'paid' && !existingTicket) {
+      try {
+        ticket = await TicketModel.findOneAndUpdate(
+          { registrationId: registration._id },
           {
             $setOnInsert: {
               registrationId: registration._id,
               userId,
               eventId: registration.eventId,
-              ticketNumber: `DP-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`.toUpperCase(),
+              ticketNumber:
+                `DP-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`.toUpperCase(),
               qrToken: randomBytes(24).toString('hex'),
               qrCode: 'pending-qr-generation',
               status: 'issued',
@@ -61,10 +75,30 @@ export const delegateController = {
             },
           },
           { new: true, upsert: true, projection: { ticketNumber: 1, status: 1, qrToken: 1 } },
-        ).lean()
-      : existingTicket;
+        ).lean();
+      } catch (upsertErr: unknown) {
+        // A duplicate-key error means a concurrent request already created the
+        // ticket — read it back rather than surfacing a 500.
+        const isDupe =
+          upsertErr &&
+          typeof upsertErr === 'object' &&
+          'code' in upsertErr &&
+          (upsertErr as { code: number }).code === 11000;
+        if (isDupe) {
+          ticket = await TicketModel.findOne(
+            { registrationId: registration._id },
+            { ticketNumber: 1, status: 1, qrToken: 1 },
+          ).lean();
+        } else {
+          console.error('[getMyPass] ticket upsert failed:', upsertErr);
+          // Non-duplicate failure: still return the pass without a ticket number
+          // rather than crashing — the repair can be retried on the next request.
+          ticket = null;
+        }
+      }
+    }
 
-    // This endpoint backs the pass and must never be served from a browser/proxy cache.
+    // Must never be served from a browser/proxy cache.
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     res.json({
@@ -76,7 +110,7 @@ export const delegateController = {
         assignedCommittee: committee?.name ?? null,
         committeeAbbr: committee?.abbr ?? null,
         assignedCountry,
-        submittedAt: registration.submittedAt,
+        submittedAt: (registration.submittedAt as Date).toISOString(),
         qrToken: ticket?.qrToken ?? null,
         ticketStatus: ticket?.status ?? null,
       },
@@ -119,6 +153,8 @@ function getPersistedCountry(metadata: Record<string, unknown> | undefined): str
     countryPreference?.firstChoiceCountry,
   ];
 
-  const country = candidates.find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+  const country = candidates.find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
   return country?.trim() ?? null;
 }
