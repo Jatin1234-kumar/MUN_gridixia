@@ -55,10 +55,10 @@ import type {
   PaymentStatus,
 } from '@/types';
 
-const delegateDraftKey  = (uid: string) => `mun-gridixia:delegate-application-draft:v1:${uid}`;
-const paymentDraftKey   = (uid: string) => `mun-gridixia:payment-draft:v1:${uid}`;
+const delegateDraftKey = (uid: string) => `mun-gridixia:delegate-application-draft:v1:${uid}`;
+const paymentDraftKey = (uid: string) => `mun-gridixia:payment-draft:v1:${uid}`;
 const paymentSessionKey = (uid: string) => `mun-gridixia:payment-session:v1:${uid}`;
-const paidEventIdsKey   = (uid: string) => `mun-gridixia:paid-event-ids:v1:${uid}`;
+const paidEventIdsKey = (uid: string) => `mun-gridixia:paid-event-ids:v1:${uid}`;
 const razorpayCheckoutSrc = 'https://checkout.razorpay.com/v1/checkout.js';
 
 const paymentSchema = z.object({
@@ -192,16 +192,19 @@ function clearPaymentStorage(uid: string) {
 
 function getSeedValues(uid: string, userEmail: string): Partial<PaymentFormValues> {
   const delegateDraft = readJson<DelegateApplicationDraft>(delegateDraftKey(uid));
-  const paymentDraft  = readJson<Partial<PaymentFormValues>>(paymentDraftKey(uid));
+  const paymentDraft = readJson<Partial<PaymentFormValues>>(paymentDraftKey(uid));
   const firstNonEmpty = (...values: Array<string | undefined>) =>
     values.find((value) => Boolean(value?.trim())) ?? '';
 
   return {
     ...paymentDraft,
     applicantName: firstNonEmpty(paymentDraft?.applicantName, delegateDraft?.personal?.fullName),
-    email:         firstNonEmpty(paymentDraft?.email, delegateDraft?.personal?.email, userEmail),
-    committeeId:   firstNonEmpty(paymentDraft?.committeeId, delegateDraft?.committeePreference?.preferredCommitteeId),
-    billingName:   firstNonEmpty(paymentDraft?.billingName, delegateDraft?.personal?.fullName),
+    email: firstNonEmpty(paymentDraft?.email, delegateDraft?.personal?.email, userEmail),
+    committeeId: firstNonEmpty(
+      paymentDraft?.committeeId,
+      delegateDraft?.committeePreference?.preferredCommitteeId,
+    ),
+    billingName: firstNonEmpty(paymentDraft?.billingName, delegateDraft?.personal?.fullName),
   };
 }
 
@@ -217,7 +220,7 @@ function getPaymentPrefill(state: unknown): Partial<PaymentPrefill> | undefined 
     committeeId: typeof value.committeeId === 'string' ? value.committeeId : undefined,
     billingName: typeof value.billingName === 'string' ? value.billingName : undefined,
     paymentMethod: ['card', 'upi', 'netbanking'].includes(String(value.paymentMethod))
-      ? value.paymentMethod as PaymentFormValues['paymentMethod']
+      ? (value.paymentMethod as PaymentFormValues['paymentMethod'])
       : undefined,
     couponCode: typeof value.couponCode === 'string' ? value.couponCode : undefined,
   };
@@ -324,7 +327,8 @@ function toDisplayString(value: unknown, fallback = '—'): string {
   // ObjectId or object leaked from Mongoose — extract known id fields
   if (typeof value === 'object') {
     const obj = value as Record<string, unknown>;
-    const identifier = obj.id ?? obj._id ?? obj.receiptId ?? obj.transactionId ?? obj.url ?? obj.reference;
+    const identifier =
+      obj.id ?? obj._id ?? obj.receiptId ?? obj.transactionId ?? obj.url ?? obj.reference;
     if (identifier !== value) {
       const displayIdentifier = toDisplayString(identifier, '');
       if (displayIdentifier) return displayIdentifier;
@@ -759,7 +763,9 @@ function DelegatePaymentExperience() {
   const { data: registrationStatus } = useQuery<RegistrationStatus | null>({
     queryKey: ['my-registration-status', uid],
     queryFn: async () => {
-      const { data } = await api.get<{ data: RegistrationStatus | null }>('/payments/my-registration-status');
+      const { data } = await api.get<{ data: RegistrationStatus | null }>(
+        '/payments/my-registration-status',
+      );
       return data.data;
     },
     staleTime: 60_000,
@@ -773,32 +779,31 @@ function DelegatePaymentExperience() {
     // Clear any corrupt localStorage remnant before writing the clean synthesized session.
     clearPaymentStorage(uid);
     const safeReceipt = registrationStatus?.registrationNumber ?? 'Confirmed';
-    const safeCommitteeId = typeof vaultStatus.committeeId === 'string'
-      ? vaultStatus.committeeId
-      : '';
+    const safeCommitteeId =
+      typeof vaultStatus.committeeId === 'string' ? vaultStatus.committeeId : '';
     setSession((prev) => ({
-      orderId:       prev?.orderId      ?? 'DB-CONFIRMED',
-      receiptId:     prev?.receiptId    ?? safeReceipt,
+      orderId: prev?.orderId ?? 'DB-CONFIRMED',
+      receiptId: prev?.receiptId ?? safeReceipt,
       registrationId: prev?.registrationId,
-      status:        'success',
-      attempts:      prev?.attempts     ?? 1,
-      applicantName: vaultStatus.applicantName  ?? prev?.applicantName  ?? user?.email ?? '',
-      email:         vaultStatus.applicantEmail ?? prev?.email          ?? user?.email ?? '',
-      committeeId:   safeCommitteeId            ?? prev?.committeeId    ?? '',
-      committeeName: vaultStatus.committeeName  ?? prev?.committeeName  ?? '',
-      committeeAbbr: vaultStatus.committeeAbbr  ?? prev?.committeeAbbr  ?? '',
-      eventId:       prev?.eventId      ?? '',
-      eventName:     prev?.eventName    ?? '',
-      eventDate:     prev?.eventDate    ?? '',
+      status: 'success',
+      attempts: prev?.attempts ?? 1,
+      applicantName: vaultStatus.applicantName ?? prev?.applicantName ?? user?.email ?? '',
+      email: vaultStatus.applicantEmail ?? prev?.email ?? user?.email ?? '',
+      committeeId: safeCommitteeId ?? prev?.committeeId ?? '',
+      committeeName: vaultStatus.committeeName ?? prev?.committeeName ?? '',
+      committeeAbbr: vaultStatus.committeeAbbr ?? prev?.committeeAbbr ?? '',
+      eventId: prev?.eventId ?? '',
+      eventName: prev?.eventName ?? '',
+      eventDate: prev?.eventDate ?? '',
       paymentMethod: prev?.paymentMethod ?? 'card',
-      amount:        prev?.amount        ?? 0,
-      baseFee:       prev?.baseFee       ?? 0,
-      committeeFee:  prev?.committeeFee  ?? 0,
-      serviceFee:    prev?.serviceFee    ?? 0,
-      tax:           prev?.tax           ?? 0,
-      discount:      prev?.discount      ?? 0,
-      createdAt:     prev?.createdAt     ?? new Date().toISOString(),
-      updatedAt:     new Date().toISOString(),
+      amount: prev?.amount ?? 0,
+      baseFee: prev?.baseFee ?? 0,
+      committeeFee: prev?.committeeFee ?? 0,
+      serviceFee: prev?.serviceFee ?? 0,
+      tax: prev?.tax ?? 0,
+      discount: prev?.discount ?? 0,
+      createdAt: prev?.createdAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     }));
   }, [vaultStatus, registrationStatus, session?.status]);
 
@@ -1060,25 +1065,16 @@ function DelegatePaymentExperience() {
     setLastRecoveryAction('Started fresh');
   };
 
-  const startFreshFromSuccess = () => {
-    skipVaultHydration.current = true;
-    clearPaymentStorage(uid);
-    setSession(undefined);
-    setSavedDraft({});
-    form.reset({ ...defaultValues, email: user?.email ?? '' });
-  };
-
   if (session?.status === 'success') {
     // All display values go through toDisplayString as a final safety net.
-    const displayOrderId = session.orderId !== 'DB-CONFIRMED'
-      ? toDisplayString(session.orderId)
-      : 'Confirmed in database';
+    const displayOrderId =
+      session.orderId !== 'DB-CONFIRMED'
+        ? toDisplayString(session.orderId)
+        : 'Confirmed in database';
     const displayCommittee = session.committeeName
       ? `${toDisplayString(session.committeeAbbr)} — ${toDisplayString(session.committeeName)}`
       : toDisplayString(vaultStatus?.committeeName, 'Confirmed');
-    const displayAmount = session.amount > 0
-      ? `₹${session.amount.toLocaleString()}`
-      : 'Confirmed';
+    const displayAmount = session.amount > 0 ? `₹${session.amount.toLocaleString()}` : 'Confirmed';
     const displayEvent = toDisplayString(session.eventName, 'Confirmed');
     const displayName = toDisplayString(
       session.applicantName || vaultStatus?.applicantName || user?.email,
@@ -1111,28 +1107,25 @@ function DelegatePaymentExperience() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm text-emerald-100/80">
             <div className="divide-y divide-emerald-500/10 rounded-xl border border-emerald-500/20 bg-emerald-500/5 overflow-hidden">
-              {([
-                { label: 'Applicant',   value: displayName,      mono: false },
-                {
-                  label: 'Receipt',
-                  value: toDisplayString(
-                    session.receiptId !== 'DB-CONFIRMED' ? session.receiptId : null,
-                    toDisplayString(registrationStatus?.registrationNumber, 'Confirmed'),
-                  ),
-                  mono: true,
-                },
-                { label: 'Order ID',    value: displayOrderId,   mono: true  },
-                { label: 'Committee',   value: displayCommittee, mono: false },
-                { label: 'Event',       value: displayEvent,     mono: false },
-              ] as const).map(({ label, value, mono }) => (
+              {(
+                [
+                  { label: 'Applicant', value: displayName, mono: false },
+                  {
+                    label: 'Receipt',
+                    value: toDisplayString(
+                      session.receiptId !== 'DB-CONFIRMED' ? session.receiptId : null,
+                      toDisplayString(registrationStatus?.registrationNumber, 'Confirmed'),
+                    ),
+                    mono: true,
+                  },
+                  { label: 'Order ID', value: displayOrderId, mono: true },
+                  { label: 'Committee', value: displayCommittee, mono: false },
+                  { label: 'Event', value: displayEvent, mono: false },
+                ] as const
+              ).map(({ label, value, mono }) => (
                 <div key={label} className="flex items-start justify-between gap-4 px-4 py-2.5">
                   <span className="shrink-0 text-emerald-100/60">{label}</span>
-                  <span
-                    className={cn(
-                      'min-w-0 break-all text-right',
-                      mono && 'font-mono text-xs',
-                    )}
-                  >
+                  <span className={cn('min-w-0 break-all text-right', mono && 'font-mono text-xs')}>
                     {value}
                   </span>
                 </div>
@@ -1143,15 +1136,12 @@ function DelegatePaymentExperience() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex gap-3 flex-wrap">
+          <CardFooter className="flex gap-3">
             <Button asChild variant="outline" className="flex-1">
               <Link to="/dashboard">Go to Dashboard</Link>
             </Button>
             <Button asChild className="flex-1">
               <Link to="/delegates">View Application</Link>
-            </Button>
-            <Button variant="secondary" className="w-full" onClick={startFreshFromSuccess}>
-              Make Another Payment
             </Button>
           </CardFooter>
         </Card>
