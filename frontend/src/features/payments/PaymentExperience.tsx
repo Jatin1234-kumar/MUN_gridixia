@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ComponentType, ReactNode } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
@@ -735,6 +735,7 @@ function DelegatePaymentExperience() {
   const { data: committees = [] } = useCommittees();
   const { data: events = [] } = useEvents();
   const { session, setSession, savedDraft, setSavedDraft } = useRestoreableSession(uid);
+  const skipVaultHydration = useRef(false);
   const [infoMessage, setInfoMessage] = useState('Ready to create a secure order.');
   const [lastRecoveryAction, setLastRecoveryAction] = useState('');
   const [formError, setFormError] = useState('');
@@ -767,6 +768,7 @@ function DelegatePaymentExperience() {
 
   useEffect(() => {
     if (!vaultStatus?.paymentVerified) return;
+    if (skipVaultHydration.current) return;
     if (session?.status === 'success') return;
     // Clear any corrupt localStorage remnant before writing the clean synthesized session.
     clearPaymentStorage(uid);
@@ -1058,6 +1060,14 @@ function DelegatePaymentExperience() {
     setLastRecoveryAction('Started fresh');
   };
 
+  const startFreshFromSuccess = () => {
+    skipVaultHydration.current = true;
+    clearPaymentStorage(uid);
+    setSession(undefined);
+    setSavedDraft({});
+    form.reset({ ...defaultValues, email: user?.email ?? '' });
+  };
+
   if (session?.status === 'success') {
     // All display values go through toDisplayString as a final safety net.
     const displayOrderId = session.orderId !== 'DB-CONFIRMED'
@@ -1133,12 +1143,15 @@ function DelegatePaymentExperience() {
               </div>
             </div>
           </CardContent>
-          <CardFooter className="flex gap-3">
+          <CardFooter className="flex gap-3 flex-wrap">
             <Button asChild variant="outline" className="flex-1">
               <Link to="/dashboard">Go to Dashboard</Link>
             </Button>
             <Button asChild className="flex-1">
               <Link to="/delegates">View Application</Link>
+            </Button>
+            <Button variant="secondary" className="w-full" onClick={startFreshFromSuccess}>
+              Make Another Payment
             </Button>
           </CardFooter>
         </Card>
