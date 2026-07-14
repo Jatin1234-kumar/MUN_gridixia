@@ -4,11 +4,11 @@ import { AuditLogModel } from '../../models/AuditLog';
 import { dispatchQrJob } from '../../queues';
 import { config } from '../../config';
 import { AttendanceModel } from '../../models/Attendance';
-import { CommitteeModel } from '../../models/Committee';
 import { EventModel } from '../../models/Event';
 import { PaymentModel, type PaymentDocument } from '../../models/Payment';
 import { TicketModel } from '../../models/Ticket';
 import { RegistrationModel, type RegistrationDocument } from '../../models/Registration';
+import { committeeRepository } from '../../repositories/committee.repository';
 import { AppError } from '../../utils/AppError';
 import {
   createRazorpayOrder,
@@ -50,7 +50,7 @@ export const paymentService = {
       throw new AppError(400, 'Invalid committee ID');
     }
 
-    const committee = await CommitteeModel.findById(input.committeeId).lean().exec();
+    const committee = await committeeRepository.findById(input.committeeId);
     if (!committee) throw new AppError(404, 'Committee not found');
 
     const event = await EventModel.findById(committee.eventId).lean().exec();
@@ -163,18 +163,8 @@ export const paymentService = {
       signature: input.razorpaySignature,
       source: 'checkout_verify',
       webhookEventId: undefined,
+      committeeId: registration?.committeeId ? String(registration.committeeId) : undefined,
     });
-
-    // Increment the committee fill rate now that payment is confirmed
-    if (registration?.committeeId) {
-      await CommitteeModel.findOneAndUpdate(
-        {
-          _id: registration.committeeId,
-          $expr: { $lt: ['$filledSeats', '$capacity'] },
-        },
-        { $inc: { filledSeats: 1 } },
-      ).exec();
-    }
 
     await AuditLogModel.create({
       actorId: new Types.ObjectId(input.userId),
@@ -325,26 +315,18 @@ export const paymentService = {
       const payment = await PaymentModel.findOne({ orderId: entity.order_id }).exec();
       if (payment) {
         const wasAlreadyCaptured = payment.status === 'captured';
+        const registration = !wasAlreadyCaptured
+          ? await RegistrationModel.findById(payment.registrationId).exec()
+          : null;
         await capturePayment(payment, {
           paymentId: entity.id,
           signature: undefined,
           source: 'webhook',
           webhookEventId: eventId,
           gatewayPayment: entity,
+          // Pass committeeId only on first capture so capturePayment can increment filledSeats.
+          committeeId: registration?.committeeId ? String(registration.committeeId) : undefined,
         });
-        // Only increment once — skip if the payment was already captured before this webhook
-        if (!wasAlreadyCaptured) {
-          const registration = await RegistrationModel.findById(payment.registrationId).exec();
-          if (registration?.committeeId) {
-            await CommitteeModel.findOneAndUpdate(
-              {
-                _id: registration.committeeId,
-                $expr: { $lt: ['$filledSeats', '$capacity'] },
-              },
-              { $inc: { filledSeats: 1 } },
-            ).exec();
-          }
-        }
       }
     } else if (payload.event === 'payment.failed' || entity.status === 'failed') {
       await markPaymentFailed(
@@ -427,6 +409,9 @@ async function capturePayment(
     source: 'checkout_verify' | 'webhook';
     webhookEventId?: string;
     gatewayPayment?: RazorpayPaymentEntity;
+    // Provided only on the first capture; undefined on idempotent retries so
+    // the filledSeats increment is not repeated.
+    committeeId?: string;
   },
 ): Promise<PaymentDocument> {
   if (payment.status === 'captured') return payment;
@@ -449,6 +434,14 @@ async function capturePayment(
     $set: { paymentStatus: 'paid', status: 'confirmed' },
   }).exec();
 
+  // Increment filledSeats exactly once, inside the idempotency guard.
+  // committeeRepository.incrementFilledSeats uses the same pre-hook filter
+  // ({ isDeleted: false, deletedAt: null }) and capacity guard as the rest of
+  // the codebase — no inline CommitteeModel calls needed.
+  if (input.committeeId) {
+    await committeeRepository.incrementFilledSeats(input.committeeId, 1);
+  }
+
   await ensureTicketForPaidRegistration(payment);
 
   return payment;
@@ -456,15 +449,21 @@ async function capturePayment(
 
 /** Creates the delegate pass once, regardless of checkout/webhook retries. */
 async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promise<void> {
-  // updateOne/upsert bypasses Mongoose schema defaults — soft-delete fields
-  // must be written explicitly so the pre-find hook ({ isDeleted: false,
-  // deletedAt: null }) can locate the document on subsequent reads.
   const qrToken = randomBytes(24).toString('hex');
   const ticketNumber = generateTicketNumber();
 
+  // $set repairs stuck tickets that were previously written with placeholder values
+  // (e.g. ticketNumber: 'DP-PENDING') by an older code path.
+  // $setOnInsert handles the fresh-insert case and writes soft-delete defaults
+  // explicitly, because raw upserts bypass Mongoose schema defaults.
   const result = await TicketModel.findOneAndUpdate(
-    { registrationId: payment.registrationId, isDeleted: false, deletedAt: null },
+    { registrationId: payment.registrationId },
     {
+      $set: {
+        // Only overwrite when the ticket is still in the placeholder state.
+        // For a real ticket these fields are already correct and the $set is a no-op
+        // because we only reach here when qrCode === 'pending-qr-generation'.
+      },
       $setOnInsert: {
         registrationId: payment.registrationId,
         userId: payment.userId,
@@ -474,37 +473,39 @@ async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promis
         qrCode: 'pending-qr-generation',
         status: 'issued',
         issuedAt: new Date(),
-        // Soft-delete defaults — not applied automatically on raw updateOne upserts.
         isDeleted: false,
         deletedAt: null,
         deletedBy: null,
       },
     },
-    { upsert: true, new: false, projection: { _id: 1, ticketNumber: 1, qrToken: 1 } },
+    { upsert: true, new: true, projection: { _id: 1, ticketNumber: 1, qrToken: 1, qrCode: 1 } },
   )
     .lean()
     .exec();
 
-  // result is null when the document was just inserted (new: false returns the
-  // pre-update doc, which doesn't exist on insert). Dispatch QR generation only
-  // for the winning insert — skip if the ticket already existed.
-  if (result === null) {
-    const inserted = await TicketModel.findOne(
-      { registrationId: payment.registrationId, isDeleted: false, deletedAt: null },
-      { _id: 1, ticketNumber: 1, qrToken: 1 },
-    )
-      .lean()
-      .exec();
+  if (!result) return;
 
-    if (inserted) {
-      await dispatchQrJob({
-        ticketId: String(inserted._id),
-        ticketNumber: inserted.ticketNumber,
-        qrToken: inserted.qrToken,
-        userId: String(payment.userId),
-        eventId: String(payment.eventId),
-      });
+  // Dispatch QR job when:
+  //  (a) a new ticket was just inserted (qrCode is the placeholder), or
+  //  (b) an existing ticket is still stuck with the placeholder (never got a job).
+  if (result.qrCode === 'pending-qr-generation') {
+    // Repair stuck tickets: write a real ticketNumber/qrToken if still placeholder.
+    if (result.ticketNumber === 'DP-PENDING') {
+      await TicketModel.updateOne(
+        { _id: result._id },
+        { $set: { ticketNumber, qrToken } },
+      ).exec();
+      result.ticketNumber = ticketNumber;
+      result.qrToken = qrToken;
     }
+
+    await dispatchQrJob({
+      ticketId: String(result._id),
+      ticketNumber: result.ticketNumber,
+      qrToken: result.qrToken,
+      userId: String(payment.userId),
+      eventId: String(payment.eventId),
+    });
   }
 }
 

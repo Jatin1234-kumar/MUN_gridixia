@@ -367,12 +367,24 @@ export function DelegateForm() {
     shouldUnregister: false,
   });
 
-  // Reset the form completely when the user changes (e.g. after account switch)
+  // Reset the form completely when the user changes (e.g. after account switch).
+  // Read directly from localStorage at effect time — not from the memo — so the
+  // reset always uses the incoming user's data, never the previous render's value.
   useEffect(() => {
-    form.reset(loadedDraft ?? defaultValues);
+    const freshDraft = loadDraft(uid);
+    const freshValues = freshDraft
+      ?? (uid !== 'anonymous' && user?.email
+        ? { ...defaultValues, personal: { ...defaultValues.personal, email: user.email } }
+        : defaultValues);
+    form.reset(freshValues);
     setStepIndex(0);
     setSubmittedPayload(null);
-    setStatusMessage(loadedDraft ? 'Draft restored from local storage.' : 'Draft ready to autosave locally.');
+    setSavedAt(window.localStorage.getItem(`${draftStorageKey(uid)}:savedAt`));
+    setStatusMessage(freshDraft ? 'Draft restored from local storage.' : 'Draft ready to autosave locally.');
+    // Flush stale query cache so the previous user's registration/vault data
+    // is not shown while the new user's queries are in-flight.
+    queryClient.removeQueries({ queryKey: ['my-registration-status'] });
+    queryClient.removeQueries({ queryKey: ['vault-status'] });
   }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When confirmed and no local draft exists, repopulate all steps from backend-stored draft

@@ -21,7 +21,14 @@ async function main() {
   await connectMongo();
 
   const pending = await TicketModel.find(
-    { qrCode: 'pending-qr-generation', isDeleted: false, deletedAt: null },
+    {
+      $or: [
+        { qrCode: 'pending-qr-generation' },
+        { ticketNumber: 'DP-PENDING' },
+      ],
+      isDeleted: false,
+      deletedAt: null,
+    },
     { _id: 1, ticketNumber: 1, qrToken: 1, userId: 1, eventId: 1 },
   )
     .lean()
