@@ -40,7 +40,7 @@ export const delegateController = {
     const [existingTicket, committee, payment] = await Promise.all([
       TicketModel.findOne(
         { registrationId: registration._id },
-        { ticketNumber: 1, status: 1, qrToken: 1 },
+        { ticketNumber: 1, status: 1, qrToken: 1, qrCode: 1 },
       ).lean(),
       registration.committeeId
         ? CommitteeModel.findById(registration.committeeId, { name: 1, abbr: 1 }).lean()
@@ -72,9 +72,16 @@ export const delegateController = {
               qrCode: 'pending-qr-generation',
               status: 'issued',
               issuedAt: new Date(),
+              isDeleted: false,
+              deletedAt: null,
+              deletedBy: null,
             },
           },
-          { new: true, upsert: true, projection: { ticketNumber: 1, status: 1, qrToken: 1 } },
+          {
+            new: true,
+            upsert: true,
+            projection: { ticketNumber: 1, status: 1, qrToken: 1, qrCode: 1 },
+          },
         ).lean();
       } catch (upsertErr: unknown) {
         // A duplicate-key error means a concurrent request already created the
@@ -87,7 +94,7 @@ export const delegateController = {
         if (isDupe) {
           ticket = await TicketModel.findOne(
             { registrationId: registration._id },
-            { ticketNumber: 1, status: 1, qrToken: 1 },
+            { ticketNumber: 1, status: 1, qrToken: 1, qrCode: 1 },
           ).lean();
         } else {
           console.error('[getMyPass] ticket upsert failed:', upsertErr);
@@ -98,21 +105,27 @@ export const delegateController = {
       }
     }
 
+    const isPaid = registration.paymentStatus === 'paid';
+    // Only expose the QR code after backend-verified payment.
+    // The raw qrToken never leaves the server.
+    const qrCode =
+      isPaid && ticket?.qrCode && ticket.qrCode !== 'pending-qr-generation' ? ticket.qrCode : null;
+
     // Must never be served from a browser/proxy cache.
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
 
     res.json({
       data: {
-        ticketNumber: ticket?.ticketNumber ?? null,
+        ticketNumber: isPaid ? (ticket?.ticketNumber ?? null) : null,
         registrationNumber: registration.registrationNumber,
         registrationStatus: registration.status,
         paymentStatus: registration.paymentStatus,
-        assignedCommittee: committee?.name ?? null,
-        committeeAbbr: committee?.abbr ?? null,
-        assignedCountry,
+        assignedCommittee: isPaid ? (committee?.name ?? null) : null,
+        committeeAbbr: isPaid ? (committee?.abbr ?? null) : null,
+        assignedCountry: isPaid ? assignedCountry : null,
         submittedAt: (registration.submittedAt as Date).toISOString(),
-        qrToken: ticket?.qrToken ?? null,
-        ticketStatus: ticket?.status ?? null,
+        qrCode,
+        ticketStatus: isPaid ? (ticket?.status ?? null) : null,
       },
     });
   }),

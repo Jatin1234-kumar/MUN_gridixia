@@ -12,6 +12,7 @@ import { committeeRepository } from '../../repositories/committee.repository';
 import { AppError } from '../../utils/AppError';
 import {
   createRazorpayOrder,
+  createRazorpayRefund,
   verifyCheckoutSignature,
   verifyWebhookSignature,
 } from './razorpay.client';
@@ -52,6 +53,9 @@ export const paymentService = {
 
     const committee = await committeeRepository.findById(input.committeeId);
     if (!committee) throw new AppError(404, 'Committee not found');
+    if (committee.filledSeats >= committee.capacity) {
+      throw new AppError(409, 'Committee is full. No seats available.');
+    }
 
     const event = await EventModel.findById(committee.eventId).lean().exec();
     if (!event) throw new AppError(404, 'Linked event not found');
@@ -298,6 +302,74 @@ export const paymentService = {
     };
   },
 
+  async processRefund(registrationId: string, adminUserId: string) {
+    const registration = await RegistrationModel.findById(registrationId).exec();
+    if (!registration) throw new AppError(404, 'Registration not found');
+    if (registration.refundStatus !== 'pending') {
+      throw new AppError(
+        409,
+        `Refund is not in pending state (current: ${registration.refundStatus})`,
+      );
+    }
+
+    const payment = await PaymentModel.findOne({
+      registrationId: registration._id,
+      status: 'captured',
+    })
+      .sort({ paidAt: -1 })
+      .exec();
+    if (!payment?.paymentId)
+      throw new AppError(404, 'No captured payment found for this registration');
+
+    try {
+      const refund = await createRazorpayRefund({
+        paymentId: payment.paymentId,
+        amount: Math.round(payment.amount * 100), // rupees → paise
+        notes: { registrationId, reason: 'committee_full_at_capture' },
+      });
+
+      payment.status = 'refunded';
+      payment.refundedAmount = payment.amount;
+      payment.refundedAt = new Date();
+      await payment.save();
+
+      await RegistrationModel.findByIdAndUpdate(registration._id, {
+        $set: { paymentStatus: 'refunded', refundStatus: 'processed' },
+      }).exec();
+
+      await AuditLogModel.create({
+        actorId: new Types.ObjectId(adminUserId),
+        entityType: 'Payment',
+        entityId: String(payment._id),
+        action: 'refund',
+        metadata: {
+          razorpayRefundId: refund.id,
+          refundedAmount: payment.amount,
+          registrationId,
+        },
+      });
+
+      return { refundId: refund.id, refundedAmount: payment.amount, status: 'processed' as const };
+    } catch (err) {
+      await RegistrationModel.findByIdAndUpdate(registration._id, {
+        $set: { refundStatus: 'failed' },
+      }).exec();
+
+      await AuditLogModel.create({
+        actorId: new Types.ObjectId(adminUserId),
+        entityType: 'Payment',
+        entityId: String(payment._id),
+        action: 'refund',
+        metadata: {
+          error: err instanceof Error ? err.message : String(err),
+          registrationId,
+        },
+      });
+
+      throw err;
+    }
+  },
+
   async handleWebhook(rawBody: Buffer, signature: string | undefined, eventId?: string) {
     if (!signature || !verifyWebhookSignature(rawBody, signature)) {
       throw new AppError(400, 'Invalid Razorpay webhook signature');
@@ -430,17 +502,46 @@ async function capturePayment(
 
   await payment.save();
 
+  // Atomic seat claim: $expr guard + $inc in one findOneAndUpdate.
+  // If null → committee filled up between order creation and capture (race).
+  const seatClaimed =
+    !input.committeeId ||
+    (await committeeRepository.incrementFilledSeats(input.committeeId, 1)) !== null;
+
+  if (!seatClaimed) {
+    // Payment money is held by Razorpay — mark registration waitlisted so ops
+    // can assign another committee or trigger a refund. No ticket or QR issued.
+    await RegistrationModel.findByIdAndUpdate(payment.registrationId, {
+      $set: { paymentStatus: 'paid', status: 'waitlisted', refundStatus: 'pending' },
+    }).exec();
+
+    await AuditLogModel.create({
+      entityType: 'Registration',
+      entityId: String(payment.registrationId),
+      action: 'refund',
+      metadata: {
+        reason: 'committee_full_at_capture',
+        committeeId: input.committeeId,
+        paymentId: input.paymentId,
+        orderId: payment.orderId,
+      },
+    });
+
+    console.error(
+      '[capturePayment] OVERSELL — committee full at capture, registration waitlisted',
+      {
+        committeeId: input.committeeId,
+        registrationId: String(payment.registrationId),
+        orderId: payment.orderId,
+      },
+    );
+
+    return payment;
+  }
+
   await RegistrationModel.findByIdAndUpdate(payment.registrationId, {
     $set: { paymentStatus: 'paid', status: 'confirmed' },
   }).exec();
-
-  // Increment filledSeats exactly once, inside the idempotency guard.
-  // committeeRepository.incrementFilledSeats uses the same pre-hook filter
-  // ({ isDeleted: false, deletedAt: null }) and capacity guard as the rest of
-  // the codebase — no inline CommitteeModel calls needed.
-  if (input.committeeId) {
-    await committeeRepository.incrementFilledSeats(input.committeeId, 1);
-  }
 
   await ensureTicketForPaidRegistration(payment);
 
@@ -491,10 +592,7 @@ async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promis
   if (result.qrCode === 'pending-qr-generation') {
     // Repair stuck tickets: write a real ticketNumber/qrToken if still placeholder.
     if (result.ticketNumber === 'DP-PENDING') {
-      await TicketModel.updateOne(
-        { _id: result._id },
-        { $set: { ticketNumber, qrToken } },
-      ).exec();
+      await TicketModel.updateOne({ _id: result._id }, { $set: { ticketNumber, qrToken } }).exec();
       result.ticketNumber = ticketNumber;
       result.qrToken = qrToken;
     }

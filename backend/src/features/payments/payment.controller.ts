@@ -70,6 +70,12 @@ export const paymentController = {
     res.json({ data: result });
   }),
 
+  processRefund: asyncHandler(async (req, res) => {
+    const authReq = req as AuthenticatedRequest;
+    const result = await paymentService.processRefund(req.params.registrationId, authReq.user.sub);
+    res.json({ data: result });
+  }),
+
   webhook: asyncHandler(async (req, res) => {
     if (!Buffer.isBuffer(req.body)) {
       throw new AppError(400, 'Webhook body must be raw JSON');

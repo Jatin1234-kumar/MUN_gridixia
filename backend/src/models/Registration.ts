@@ -23,6 +23,9 @@ export const registrationPaymentStatuses = [
 ] as const;
 export type RegistrationPaymentStatus = (typeof registrationPaymentStatuses)[number];
 
+export const registrationRefundStatuses = ['none', 'pending', 'processed', 'failed'] as const;
+export type RegistrationRefundStatus = (typeof registrationRefundStatuses)[number];
+
 // ── State machine ─────────────────────────────────────────────────────────────
 
 const VALID_TRANSITIONS: Record<RegistrationStatus, readonly RegistrationStatus[]> = {
@@ -47,6 +50,7 @@ export interface Registration extends SoftDeleteFields {
   committeeId?: Types.ObjectId | null;
   status: RegistrationStatus;
   paymentStatus: RegistrationPaymentStatus;
+  refundStatus: RegistrationRefundStatus;
   category?: string | null;
   notes?: string | null;
   submittedAt: Date;
@@ -75,6 +79,13 @@ const registrationSchema = new Schema<Registration>(
       enum: registrationPaymentStatuses,
       default: 'unpaid',
       required: true,
+    },
+    refundStatus: {
+      type: String,
+      enum: registrationRefundStatuses,
+      default: 'none',
+      required: true,
+      index: true,
     },
     category: { type: String, trim: true, maxlength: 100, default: null },
     notes: { type: String, trim: true, maxlength: 2000, default: null },

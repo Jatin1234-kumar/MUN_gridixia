@@ -2,12 +2,23 @@ import { Router } from 'express';
 import { authenticate, authorize } from '../../middleware/authenticate';
 import { validate } from '../../middleware/validate';
 import { paymentController } from './payment.controller';
-import { createPaymentOrderSchema, verifyPaymentSchema } from './payment.validator';
+import {
+  createPaymentOrderSchema,
+  verifyPaymentSchema,
+  processRefundSchema,
+} from './payment.validator';
 
 const router = Router();
 
 router.post('/webhook', paymentController.webhook);
 router.get('/', authenticate, authorize(['admin']), paymentController.getAllForAdmin);
+router.post(
+  '/refund/:registrationId',
+  authenticate,
+  authorize(['admin']),
+  validate(processRefundSchema),
+  paymentController.processRefund,
+);
 router.post(
   '/orders',
   authenticate,
