@@ -1,134 +1,411 @@
 # MUN Gridixia
 
-MUN Gridixia is a full-stack conference and delegation management platform for a Model United Nations workflow. The app is split into a React frontend and an Express/MongoDB backend, with support for authentication, event and delegate management, committee workflows, payments, certificates, notifications, and operational monitoring.
+> A modern full-stack Model United Nations (MUN) Conference Management Platform built with React, Express.js, MongoDB, and TypeScript.
 
-## Tech Stack
+---
 
-- Frontend: React, TypeScript, Vite, Tailwind CSS, React Router, TanStack Query
-- Backend: Node.js, Express, TypeScript, Mongoose, BullMQ, Redis
-- Services: Razorpay, Cloudinary, Resend, Sentry
-- Tooling: npm workspaces, ESLint, Prettier, Jest
+## Motivation
 
-## Project Structure
+Many Model United Nations conferences still rely on spreadsheets, manual registrations, emails, and paper-based workflows to manage delegates, committees, payments, and certificates. These processes are time-consuming, error-prone, and difficult to scale.
 
-- `frontend/` - Vite SPA for the user-facing dashboard and public pages
-- `backend/` - Express API, MongoDB models, background workers, and business logic
-- `docker-compose.yml` - local Redis service for queues and workers
+**MUN Gridixia** was developed to digitize the complete MUN conference lifecycle by providing a centralized platform for organizers, executive board members, and delegates. The system automates registrations, committee allocation, payments, certificate generation, email notifications, and administrative operations while maintaining security, scalability, and maintainability.
 
-## Features
+---
 
-- Authentication and session handling
-- Delegate, committee, and event management
-- Dashboard analytics and monitoring views
-- Payments and webhook handling
-- Certificate generation and QR utilities
-- Email delivery and queue-based background jobs
-- Role-based middleware and validation
+# Project Overview
+
+MUN Gridixia is a production-oriented full-stack conference management platform designed specifically for Model United Nations events.
+
+The platform enables organizers to manage delegates, committees, conferences, applications, certificates, and payments through a single dashboard while providing delegates with a seamless registration and participation experience.
+
+The application follows a modular client-server architecture consisting of a React frontend, Express.js backend, MongoDB database, Redis-powered background workers, and several cloud integrations.
+
+---
+
+# Key Features
+
+## Authentication & Authorization
+
+- JWT Authentication
+- Refresh Tokens
+- Role-Based Access Control (RBAC)
+- Secure Password Hashing
+- Protected Routes
+
+## Delegate Management
+
+- Delegate Registration
+- Profile Management
+- Attendance Tracking
+- QR Code Generation
+- Delegate Dashboard
+
+## Committee Management
+
+- Committee Creation
+- Country Allocation
+- Delegate Assignment
+- Committee Management
+
+## Event Management
+
+- Conference Creation
+- Event Scheduling
+- Registration Management
+- Attendance Tracking
+
+## Application Workflow
+
+- Multi-step Application Process
+- Committee Preferences
+- Country Preferences
+- Application Review
+
+## Payments
+
+- Razorpay Integration
+- Payment Verification
+- Webhook Handling
+- Transaction Tracking
+
+## Certificate Management
+
+- Automated Certificate Generation
+- QR Verification
+- Certificate Distribution
+
+## Email System
+
+- Queue-based Email Processing
+- Registration Emails
+- Payment Confirmation
+- Certificate Delivery
+
+## Dashboard & Analytics
+
+- Registration Statistics
+- Revenue Analytics
+- Attendance Reports
+- Committee Distribution
+- Operational Monitoring
+
+---
+
+# Technology Stack
+
+## Frontend
+
+| Technology      | Purpose          |
+| --------------- | ---------------- |
+| React           | User Interface   |
+| TypeScript      | Static Typing    |
+| Vite            | Build Tool       |
+| Tailwind CSS    | Styling          |
+| Shadcn UI       | UI Components    |
+| React Router    | Routing          |
+| TanStack Query  | Server State     |
+| React Hook Form | Forms            |
+| Zod             | Validation       |
+| Recharts        | Analytics Charts |
+| jsPDF           | PDF Generation   |
+| qrcode.react    | QR Codes         |
+
+---
+
+## Backend
+
+| Technology | Purpose          |
+| ---------- | ---------------- |
+| Node.js    | Runtime          |
+| Express.js | REST API         |
+| TypeScript | Static Typing    |
+| MongoDB    | Database         |
+| Mongoose   | ODM              |
+| BullMQ     | Background Jobs  |
+| Redis      | Queue Storage    |
+| JWT        | Authentication   |
+| bcryptjs   | Password Hashing |
+| Zod        | Validation       |
+
+---
+
+## Third-Party Services
+
+- Razorpay
+- Cloudinary
+- Redis
+- Resend
+- Sentry
+
+---
+
+# Project Architecture
+
+```text
+                   React Frontend
+                          │
+                          │
+                     REST API
+                    Express.js
+                          │
+      ┌─────────────┬──────────────┬───────────────┐
+      │             │              │               │
+   MongoDB       BullMQ         Razorpay      Cloudinary
+                     │
+                  Redis
+                     │
+      Email Worker • Certificate Worker • QR Worker
+```
+
+---
+
+# Project Statistics
+
+| Category        | Details              |
+| --------------- | -------------------- |
+| Architecture    | Client-Server        |
+| Frontend        | React + TypeScript   |
+| Backend         | Express + TypeScript |
+| Database        | MongoDB              |
+| Background Jobs | BullMQ + Redis       |
+| Authentication  | JWT                  |
+| Payment Gateway | Razorpay             |
+| Cloud Storage   | Cloudinary           |
+| Email Service   | Resend               |
+
+---
+
+# Folder Structure
+
+```text
+.
+├── backend
+│   ├── config
+│   ├── controllers
+│   ├── features
+│   ├── middleware
+│   ├── models
+│   ├── queues
+│   ├── repositories
+│   ├── routes
+│   ├── services
+│   ├── utils
+│   ├── validators
+│   └── workers
+│
+├── frontend
+│   ├── assets
+│   ├── components
+│   ├── features
+│   ├── hooks
+│   ├── layouts
+│   ├── pages
+│   ├── routes
+│   ├── services
+│   └── types
+│
+├── docker-compose.yml
+├── package.json
+└── README.md
+```
+
+---
+
+# Design Patterns
+
+The project follows modern backend architecture and software engineering principles.
+
+- Repository Pattern
+- Service Layer Pattern
+- Middleware Pattern
+- Modular Architecture
+- Separation of Concerns
+- Feature-Based Frontend Structure
+
+---
+
+# Installation
 
 ## Prerequisites
 
-- Node.js 18+ recommended
+- Node.js 18+
 - npm 9+
-- MongoDB instance
-- Redis instance
-- Optional integrations depending on the features you use:
-  - Razorpay
-  - Cloudinary
-  - Resend
-  - Sentry
+- MongoDB
+- Redis
 
-## Setup
+Clone repository
 
-Install dependencies from the repo root:
+```bash
+git clone https://github.com/your-username/mun-gridixia.git
+
+cd mun-gridixia
+```
+
+Install dependencies
 
 ```bash
 npm install
 ```
 
-If you want the local Redis container, start it with:
+Run Redis
 
 ```bash
 docker compose up -d redis
 ```
 
-## Environment Variables
+---
 
-Create a backend `.env` file with the following values:
+# Environment Variables
 
-```env
-NODE_ENV=development
-PORT=5000
-MONGODB_URI=your_mongodb_connection_string
-JWT_ACCESS_SECRET=your_access_secret_with_at_least_32_chars
-JWT_REFRESH_SECRET=your_refresh_secret_with_at_least_32_chars
-RAZORPAY_KEY_ID=your_razorpay_key_id
-RAZORPAY_SECRET=your_razorpay_secret
-RAZORPAY_WEBHOOK_SECRET=your_razorpay_webhook_secret
-CLOUDINARY_CLOUD_NAME=your_cloudinary_cloud_name
-CLOUDINARY_API_KEY=your_cloudinary_api_key
-CLOUDINARY_API_SECRET=your_cloudinary_api_secret
-REDIS_URL=your_redis_connection_string
-RESEND_API_KEY=your_resend_api_key
-EMAIL_FROM=no-reply@example.com
-CORS_ORIGINS=http://localhost:5173
-SENTRY_DSN=
-SUPER_ADMIN_EMAIL=
-SUPER_ADMIN_PASSWORD=
-SUPER_ADMIN_FIRST_NAME=
-SUPER_ADMIN_LAST_NAME=
+Create
+
+```
+backend/.env
 ```
 
-For the frontend, optionally set:
+and
 
-```env
-VITE_API_BASE_URL=http://localhost:5000/api
+```
+frontend/.env
 ```
 
-## Development
+Refer to the configuration examples below.
 
-Run both apps together from the repo root:
+_(Keep your existing environment variable section here.)_
+
+---
+
+# Running Locally
+
+Run the complete application
 
 ```bash
 npm run dev
 ```
 
-Or run them separately:
+Run frontend
 
 ```bash
-npm run dev --workspace=backend
 npm run dev --workspace=frontend
 ```
 
-## Build
-
-Build both workspaces:
+Run backend
 
 ```bash
-npm run build
+npm run dev --workspace=backend
 ```
 
-## Lint
+---
 
-Run linting across all workspaces:
+# API Overview
 
-```bash
-npm run lint
+The backend exposes RESTful APIs organized into modules.
+
+Major API Groups
+
+- Authentication
+- Users
+- Delegates
+- Committees
+- Events
+- Applications
+- Payments
+- Certificates
+- Dashboard
+- Admin
+
+> Detailed API documentation is available in **docs/API.md**.
+
+---
+
+# Security
+
+The application implements multiple security layers.
+
+- JWT Authentication
+- Refresh Tokens
+- Role-Based Authorization
+- Password Hashing (bcrypt)
+- Zod Validation
+- Helmet Security Headers
+- CORS Protection
+- Rate Limiting
+- CSRF Header Support
+- Secure Environment Variable Validation
+
+---
+
+# Deployment Architecture
+
+The application is designed to be deployed using the following architecture.
+
+```text
+React Frontend
+      │
+      ▼
+ Vercel / Nginx
+
+      │
+
+Express Backend
+
+      │
+
+MongoDB Atlas
+
+      │
+
+Redis Cloud
+
+      │
+
+Cloudinary
+
+      │
+
+Resend
+
+      │
+
+Razorpay
 ```
 
-## Testing
+---
 
-Backend tests run with Jest:
+# Future Improvements
 
-```bash
-npm run test --workspace=backend
-```
+- Real-time Notifications using WebSockets
+- AI-assisted Committee Allocation
+- Mobile Application
+- Multi-language Support
+- Advanced Analytics Dashboard
+- Dockerized Full Stack Deployment
+- CI/CD Pipeline using GitHub Actions
+- Multi-conference Support
+- Audit Logs
+- Redis API Caching
 
-## Notes
+---
 
-- The backend validates its environment variables at startup, so missing or invalid values will stop the server immediately.
-- The frontend uses a shared API client with automatic token refresh and CSRF header support.
-- Redis is used for queue-backed workers such as email, certificates, QR generation, and other background jobs.
+# Documentation
 
-## License
+Additional documentation can be found in the `docs/` directory.
 
-No license file is currently included in this repository.
+- API Documentation
+- Architecture Documentation
+- Database Design
+- Deployment Guide
+- Developer Guide
+- Security Documentation
+
+---
+
+# License
+
+This project is developed for educational and professional portfolio purposes.
+
+---
+
+# Author
+
+Developed by **Jatin Kumar**
