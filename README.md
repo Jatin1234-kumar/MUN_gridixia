@@ -387,20 +387,6 @@ Razorpay
 
 ---
 
-# Screenshots
-
-> Add screenshots of the following pages.
-
-- Login
-- Dashboard
-- Delegate Management
-- Committee Management
-- Event Management
-- Payment Flow
-- Certificate Generation
-
----
-
 # Documentation
 
 Additional documentation can be found in the `docs/` directory.
