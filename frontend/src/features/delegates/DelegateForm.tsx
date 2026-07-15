@@ -681,7 +681,7 @@ export function DelegateForm() {
                                 <Label htmlFor="academic.yearOfStudy">Year of Study</Label>
                                 <SelectField
                                   id="academic.yearOfStudy"
-                                  label="Year of Study"
+                                  label=""
                                   error={form.formState.errors.academic?.yearOfStudy?.message}
                                   {...form.register('academic.yearOfStudy')}
                                 >
@@ -719,7 +719,7 @@ export function DelegateForm() {
                                 </Label>
                                 <SelectField
                                   id="experience.yearsOfExperience"
-                                  label="Experience Level"
+                                  label=""
                                   error={
                                     form.formState.errors.experience?.yearsOfExperience?.message
                                   }
@@ -763,7 +763,7 @@ export function DelegateForm() {
                                 </Label>
                                 <SelectField
                                   id="committeePreference.preferredCommitteeId"
-                                  label="First Choice Committee"
+                                  label=""
                                   error={
                                     form.formState.errors.committeePreference?.preferredCommitteeId
                                       ?.message
@@ -800,7 +800,7 @@ export function DelegateForm() {
                                 </Label>
                                 <SelectField
                                   id="committeePreference.secondChoiceCommitteeId"
-                                  label="Second Choice Committee"
+                                  label=""
                                   error={
                                     form.formState.errors.committeePreference
                                       ?.secondChoiceCommitteeId?.message
