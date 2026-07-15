@@ -5,6 +5,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
     "start": "node dist/server.js",
+    "diagnose:pass": "tsx src/scripts/inspectDelegatePass.ts",
+    "backfill:qr": "tsx src/scripts/backfillQrJobs.ts",
     "lint": "eslint src --ext .ts --report-unused-disable-directives --max-warnings 0",
     "test": "jest --runInBand --forceExit"
   },

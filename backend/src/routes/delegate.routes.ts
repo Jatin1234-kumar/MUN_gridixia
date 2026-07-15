@@ -10,6 +10,7 @@ import {
 
 const router = Router();
 
+router.get('/pass', authenticate, delegateController.getMyPass);
 router.get('/', delegateController.getAll);
 router.get('/:id', validate(getDelegateSchema), delegateController.getById);
 router.post(

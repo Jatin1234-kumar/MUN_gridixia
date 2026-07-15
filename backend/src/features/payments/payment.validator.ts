@@ -8,6 +8,7 @@ export const createPaymentOrderSchema = z.object({
     paymentMethod: z.enum(['card', 'upi', 'netbanking']),
     billingName: z.string().min(2).max(120),
     couponCode: z.string().max(64).optional().default(''),
+    applicationDraft: z.record(z.unknown()).optional(),
   }),
 });
 
@@ -18,6 +19,14 @@ export const verifyPaymentSchema = z.object({
     razorpaySignature: z.string().min(1),
   }),
 });
+
+export const processRefundSchema = z.object({
+  params: z.object({
+    registrationId: z.string().min(1),
+  }),
+});
+
+export type ProcessRefundDto = z.infer<typeof processRefundSchema>['params'];
 
 export type CreatePaymentOrderDto = z.infer<typeof createPaymentOrderSchema>['body'];
 export type VerifyPaymentDto = z.infer<typeof verifyPaymentSchema>['body'];

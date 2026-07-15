@@ -8,4 +8,11 @@ const fetchCommittees = async (): Promise<Committee[]> => {
 };
 
 export const useCommittees = () =>
-  useQuery({ queryKey: ['committees'], queryFn: fetchCommittees });
+  useQuery({
+    queryKey: ['committees'],
+    queryFn: fetchCommittees,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
+    refetchInterval: 30_000,
+  });

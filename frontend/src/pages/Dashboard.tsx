@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ComponentType } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import api, { getApiErrorMessage } from '@/lib/api';
 import { useAuth } from '@/features/auth/AuthContext';
@@ -257,6 +258,17 @@ function EventPaymentCard({
 
 type DashboardStatus = 'complete' | 'in-progress' | 'pending' | 'attention';
 
+interface VaultStatus {
+  applicantName: string | null;
+  applicantEmail: string | null;
+  committeeName: string | null;
+  committeeAbbr: string | null;
+  committeeId: string | null;
+  paymentVerified: boolean;
+  checkedIn: boolean;
+  registrationStatus: string;
+}
+
 function StatusPill({ status }: { status: DashboardStatus }) {
   const config = {
     complete: { label: 'Complete', variant: 'active' as const },
@@ -422,6 +434,17 @@ export default function Dashboard() {
   const [draft, setDraft] = useState<Partial<DelegateApplicationDraft> | undefined>(undefined);
   const [session, setSession] = useState<PaymentSession | undefined>(undefined);
 
+  const { data: vaultStatus } = useQuery<VaultStatus | null>({
+    queryKey: ['vault-status', user?.id],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: VaultStatus | null }>('/payments/my-vault-status');
+      return data.data;
+    },
+    enabled: Boolean(user?.id),
+    staleTime: 30_000,
+    retry: false,
+  });
+
   useEffect(() => {
     if (!user?.id) {
       setDraft(undefined);
@@ -442,54 +465,62 @@ export default function Dashboard() {
     return events.find((event: Event) => event.id === eventId);
   }, [events, selectedCommittee, session]);
 
-  const registrationStatus: DashboardStatus = draft?.personal?.fullName ? 'complete' : 'in-progress';
-  const paymentStatus: DashboardStatus =
-    session?.status === 'success'
-      ? 'complete'
-      : session?.status === 'failed'
-        ? 'attention'
-        : session?.status === 'processing'
-          ? 'in-progress'
-          : 'pending';
-  const committeeStatus: DashboardStatus = selectedCommittee ? 'complete' : 'pending';
-  const attendanceStatus: DashboardStatus =
-    paymentStatus === 'complete' && selectedEvent ? 'in-progress' : 'pending';
-  const certificateStatus: DashboardStatus = paymentStatus === 'complete' ? 'pending' : 'pending';
+  // The vault is the source of truth. Local storage only supplies display details,
+  // never milestone completion, so logging out cannot reset the journey state.
+  const isPaid = Boolean(vaultStatus?.paymentVerified);
+  const isAllocated = Boolean(vaultStatus?.committeeId);
+  const isCheckedIn = Boolean(vaultStatus?.checkedIn);
+  const isCertified = vaultStatus?.registrationStatus === 'CERTIFIED';
 
-  const timeline = [
+  const completionPercentage = useMemo(() => {
+    let percentage = 20; // The authenticated registration step.
+    if (isPaid) percentage += 20;
+    if (isAllocated) percentage += 20;
+    if (isCheckedIn) percentage += 20;
+    if (isCertified) percentage += 20;
+    return percentage;
+  }, [isPaid, isAllocated, isCheckedIn, isCertified]);
+
+  const registrationStatus: DashboardStatus = isPaid ? 'complete' : 'in-progress';
+  const paymentStatus: DashboardStatus = isPaid ? 'complete' : 'pending';
+  const committeeStatus: DashboardStatus = isAllocated ? 'complete' : (isPaid ? 'in-progress' : 'pending');
+  const attendanceStatus: DashboardStatus = isCheckedIn ? 'complete' : (isAllocated ? 'in-progress' : 'pending');
+  const certificateStatus: DashboardStatus = isCertified ? 'complete' : 'pending';
+
+  const timelineSteps = [
     {
       title: 'Registered',
-      subtitle: draft?.personal?.fullName
-        ? 'Application draft completed'
-        : 'Waiting for application completion',
+      subtitle: isPaid ? 'Application captured and secured.' : 'Waiting for application completion',
       status: registrationStatus,
     },
     {
       title: 'Paid',
-      subtitle: session?.status ? `Payment ${session.status}` : 'Awaiting payment',
+      subtitle: 'Payment success',
       status: paymentStatus,
     },
     {
       title: 'Allocated',
-      subtitle: selectedCommittee
-        ? `${selectedCommittee.abbr} - ${selectedCommittee.name}`
+      subtitle: isAllocated
+        ? `Assigned to ${vaultStatus?.committeeAbbr ?? vaultStatus?.committeeName ?? 'your committee'}`
         : 'Committee not yet assigned',
       status: committeeStatus,
     },
     {
       title: 'Checked In',
-      subtitle: 'Attendance will unlock after payment and allocation',
+      subtitle: 'Attendance verification status',
       status: attendanceStatus,
     },
     {
       title: 'Certified',
-      subtitle: 'Certificate will issue after attendance verification',
+      subtitle: 'Certificate availability status',
       status: certificateStatus,
     },
   ];
 
-  const committeeAllocation = selectedCommittee
-    ? `${selectedCommittee.abbr}`
+  const committeeAllocation = vaultStatus?.committeeAbbr
+    ? vaultStatus.committeeAbbr
+    : selectedCommittee
+    ? selectedCommittee.abbr
     : draft?.committeePreference?.preferredCommitteeName || 'Unassigned';
   const countryPortfolio = draft?.countryPreference?.firstChoiceCountry || 'No country selected';
   const eventName = selectedEvent?.name || 'No active event';
@@ -504,31 +535,29 @@ export default function Dashboard() {
   const modules = [
     {
       title: 'Registration Status',
-      value: draft?.personal?.fullName ? 'Registered' : 'Draft Saved',
-      subtitle: draft?.personal?.email || 'Resume your application',
+      value: isPaid ? 'Registered' : (draft?.personal?.fullName ? 'Registered' : 'Draft Saved'),
+      subtitle: isPaid ? 'Application captured and secured.' : (draft?.personal?.email || 'Resume your application'),
       status: registrationStatus,
       icon: Users,
     },
     {
       title: 'Payment Status',
-      value: session?.status
-        ? session.status.charAt(0).toUpperCase() + session.status.slice(1)
-        : 'Pending',
-      subtitle: session?.orderId ? `Order ${session.orderId}` : 'No active order',
+      value: isPaid ? 'Success' : 'Pending',
+      subtitle: isPaid ? 'Confirmed in database' : 'No verified payment',
       status: paymentStatus,
       icon: CreditCard,
     },
     {
       title: 'Committee Allocation',
       value: committeeAllocation,
-      subtitle: selectedCommittee?.name || 'Awaiting allocation',
+      subtitle: vaultStatus?.committeeName || selectedCommittee?.name || 'Awaiting allocation',
       status: committeeStatus,
       icon: LayoutPanelTop,
     },
     {
       title: 'Attendance Status',
-      value: paymentStatus === 'complete' ? 'Ready to Check In' : 'Locked',
-      subtitle: paymentStatus === 'complete' ? 'Attendance lane enabled' : 'Complete payment first',
+      value: isCheckedIn ? 'Checked In' : (isAllocated ? 'Ready to Check In' : 'Locked'),
+      subtitle: isCheckedIn ? 'Attendance verified' : (isAllocated ? 'Attendance lane enabled' : 'Complete allocation first'),
       status: attendanceStatus,
       icon: ShieldCheck,
     },
@@ -586,15 +615,6 @@ export default function Dashboard() {
     },
   ];
 
-  const completion = [
-    registrationStatus,
-    paymentStatus,
-    committeeStatus,
-    attendanceStatus,
-    certificateStatus,
-  ].filter((status) => status === 'complete').length;
-  const progress = (completion / 5) * 100;
-
   return (
     <div className="space-y-6 pb-8">
       <PageHeader
@@ -641,20 +661,20 @@ export default function Dashboard() {
               </div>
               <div className="rounded-2xl border border-gold-500/20 bg-gold-500/10 px-4 py-3 text-right">
                 <p className="text-[10px] uppercase tracking-[0.3em] text-gold-400">Completion</p>
-                <p className="mt-1 text-2xl font-semibold text-gold-300">{Math.round(progress)}%</p>
+                <p className="mt-1 text-2xl font-semibold text-gold-300">{completionPercentage}%</p>
               </div>
             </div>
-            <Progress value={progress} />
+            <Progress value={completionPercentage} />
           </CardHeader>
           <CardContent className="p-5 sm:p-6">
             <div className="grid gap-1">
-              {timeline.map((item, index) => (
+              {timelineSteps.map((item, index) => (
                 <TimelineStep
                   key={item.title}
                   title={item.title}
                   subtitle={item.subtitle}
                   status={item.status}
-                  last={index === timeline.length - 1}
+                  last={index === timelineSteps.length - 1}
                 />
               ))}
             </div>

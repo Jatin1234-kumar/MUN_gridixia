@@ -5,9 +5,9 @@ import type { GenerateCertificateJobData, GenerateQrJobData, QueuedEmail } from 
 // ── Queue names ───────────────────────────────────────────────────────────────
 
 export const QUEUE = {
-  QR:          'qr-generation',
+  QR: 'qr-generation',
   CERTIFICATE: 'certificate-generation',
-  EMAIL:       'emails',
+  EMAIL: 'emails',
   DEAD_LETTER: 'dead-letter',
 } as const;
 
@@ -30,27 +30,35 @@ function makeQueue<T = any>(name: string): Queue<T> {
   });
 }
 
-let qrQueue:          Queue<GenerateQrJobData>          | undefined;
+let qrQueue: Queue<GenerateQrJobData> | undefined;
 let certificateQueue: Queue<GenerateCertificateJobData> | undefined;
-let emailQueue:       Queue<QueuedEmail>                | undefined;
-let deadLetterQueue:  Queue<unknown>                    | undefined;
+let emailQueue: Queue<QueuedEmail> | undefined;
+let deadLetterQueue: Queue<unknown> | undefined;
 
-export function getQrQueue()          { return (qrQueue          ??= makeQueue<GenerateQrJobData>(QUEUE.QR)); }
-export function getCertificateQueue() { return (certificateQueue ??= makeQueue<GenerateCertificateJobData>(QUEUE.CERTIFICATE)); }
-export function getEmailQueue()       { return (emailQueue       ??= makeQueue<QueuedEmail>(QUEUE.EMAIL)); }
-export function getDeadLetterQueue()  { return (deadLetterQueue  ??= makeQueue<unknown>(QUEUE.DEAD_LETTER)); }
+export function getQrQueue() {
+  return (qrQueue ??= makeQueue<GenerateQrJobData>(QUEUE.QR));
+}
+export function getCertificateQueue() {
+  return (certificateQueue ??= makeQueue<GenerateCertificateJobData>(QUEUE.CERTIFICATE));
+}
+export function getEmailQueue() {
+  return (emailQueue ??= makeQueue<QueuedEmail>(QUEUE.EMAIL));
+}
+export function getDeadLetterQueue() {
+  return (deadLetterQueue ??= makeQueue<unknown>(QUEUE.DEAD_LETTER));
+}
 
 // ── Typed dispatchers ─────────────────────────────────────────────────────────
 
 export function dispatchQrJob(data: GenerateQrJobData) {
   return getQrQueue().add('generate-qr', data, {
-    jobId: `qr:${data.ticketId}`,
+    jobId: `qr_${data.ticketId}`,
   });
 }
 
 export function dispatchCertificateJob(data: GenerateCertificateJobData) {
   return getCertificateQueue().add('generate-certificate', data, {
-    jobId: `cert:${data.certificateId}`,
+    jobId: `cert_${data.certificateId}`,
   });
 }
 

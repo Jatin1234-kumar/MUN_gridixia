@@ -17,7 +17,9 @@ export function startQrWorker() {
 
       await job.updateProgress(70);
 
-      await TicketModel.findByIdAndUpdate(ticketId, { qrCode: qrDataUrl });
+      await TicketModel.findByIdAndUpdate(ticketId, {
+        $set: { qrCode: qrDataUrl, isDeleted: false, deletedAt: null },
+      });
 
       await job.updateProgress(100);
 

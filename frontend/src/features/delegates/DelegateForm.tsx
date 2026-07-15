@@ -5,7 +5,7 @@ import { useForm, useWatch, type FieldPath } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useAuth } from '@/features/auth/AuthContext';
 import api from '@/lib/api';
@@ -54,6 +54,19 @@ interface RegistrationStatus {
   isConfirmed: boolean;
 }
 
+interface VaultStatus {
+  applicantName: string | null;
+  billingName: string | null;
+  applicantEmail: string | null;
+  committeeName: string | null;
+  committeeAbbr: string | null;
+  committeeId: string | null;
+  applicationDraft: Record<string, unknown> | null;
+  paymentVerified: boolean;
+  checkedIn: boolean;
+  registrationStatus: string;
+}
+
 function useMyRegistrationStatus() {
   return useQuery<RegistrationStatus | null>({
     queryKey: ['my-registration-status'],
@@ -61,6 +74,18 @@ function useMyRegistrationStatus() {
       const { data } = await api.get<{ data: RegistrationStatus | null }>(
         '/payments/my-registration-status',
       );
+      return data.data;
+    },
+    staleTime: 30_000,
+    retry: false,
+  });
+}
+
+function useMyVaultStatus() {
+  return useQuery<VaultStatus | null>({
+    queryKey: ['vault-status'],
+    queryFn: async () => {
+      const { data } = await api.get<{ data: VaultStatus | null }>('/payments/my-vault-status');
       return data.data;
     },
     staleTime: 30_000,
@@ -309,9 +334,11 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
 
 export function DelegateForm() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const uid = user?.id ?? 'anonymous';
   const { data: regStatus, isLoading: regStatusLoading } = useMyRegistrationStatus();
+  const { data: vaultStatus } = useMyVaultStatus();
   const isConfirmed = regStatus?.isConfirmed ?? false;
   const { data: committees = [] } = useCommittees();
   const { data: events = [] } = useEvents();
@@ -340,13 +367,75 @@ export function DelegateForm() {
     shouldUnregister: false,
   });
 
-  // Reset the form completely when the user changes (e.g. after account switch)
+  // Reset the form completely when the user changes (e.g. after account switch).
+  // Read directly from localStorage at effect time — not from the memo — so the
+  // reset always uses the incoming user's data, never the previous render's value.
   useEffect(() => {
-    form.reset(loadedDraft ?? defaultValues);
+    const freshDraft = loadDraft(uid);
+    const freshValues = freshDraft
+      ?? (uid !== 'anonymous' && user?.email
+        ? { ...defaultValues, personal: { ...defaultValues.personal, email: user.email } }
+        : defaultValues);
+    form.reset(freshValues);
     setStepIndex(0);
     setSubmittedPayload(null);
-    setStatusMessage(loadedDraft ? 'Draft restored from local storage.' : 'Draft ready to autosave locally.');
+    setSavedAt(window.localStorage.getItem(`${draftStorageKey(uid)}:savedAt`));
+    setStatusMessage(freshDraft ? 'Draft restored from local storage.' : 'Draft ready to autosave locally.');
+    // Flush stale query cache so the previous user's registration/vault data
+    // is not shown while the new user's queries are in-flight.
+    queryClient.removeQueries({ queryKey: ['my-registration-status'] });
+    queryClient.removeQueries({ queryKey: ['vault-status'] });
   }, [uid]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // When confirmed and no local draft exists, repopulate all steps from backend-stored draft
+  useEffect(() => {
+    if (!isConfirmed || !vaultStatus) return;
+    const hasDraft = Boolean(loadDraft(uid));
+    if (hasDraft) return;
+
+    const d = vaultStatus.applicationDraft as Partial<ApplicationFormValues> | null;
+    form.reset({
+      personal: {
+        fullName: d?.personal?.fullName ?? vaultStatus.applicantName ?? '',
+        email: d?.personal?.email ?? vaultStatus.applicantEmail ?? user?.email ?? '',
+        phone: d?.personal?.phone ?? '',
+        dateOfBirth: d?.personal?.dateOfBirth ?? '',
+        nationality: d?.personal?.nationality ?? '',
+      },
+      academic: {
+        institution: d?.academic?.institution ?? '',
+        degree: d?.academic?.degree ?? '',
+        yearOfStudy: d?.academic?.yearOfStudy ?? '',
+        major: d?.academic?.major ?? '',
+      },
+      experience: {
+        yearsOfExperience: d?.experience?.yearsOfExperience ?? '',
+        previousConferences: d?.experience?.previousConferences ?? '',
+        awards: d?.experience?.awards ?? '',
+      },
+      committeePreference: {
+        preferredCommitteeId: d?.committeePreference?.preferredCommitteeId ?? vaultStatus.committeeId ?? '',
+        preferredCommitteeName: d?.committeePreference?.preferredCommitteeName ?? vaultStatus.committeeName ?? '',
+        secondChoiceCommitteeId: d?.committeePreference?.secondChoiceCommitteeId ?? '',
+        positionPreference: d?.committeePreference?.positionPreference ?? '',
+      },
+      countryPreference: {
+        firstChoiceCountry: d?.countryPreference?.firstChoiceCountry ?? '',
+        secondChoiceCountry: d?.countryPreference?.secondChoiceCountry ?? '',
+        thirdChoiceCountry: d?.countryPreference?.thirdChoiceCountry ?? '',
+        reasonForCountry: d?.countryPreference?.reasonForCountry ?? '',
+      },
+      review: {
+        termsAccepted: d?.review?.termsAccepted ?? true,
+        marketingOptIn: d?.review?.marketingOptIn ?? false,
+      },
+      payment: {
+        paymentMethod: d?.payment?.paymentMethod ?? 'card',
+        billingName: d?.payment?.billingName ?? vaultStatus.billingName ?? '',
+        couponCode: d?.payment?.couponCode ?? '',
+      },
+    });
+  }, [isConfirmed, vaultStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const values = useWatch({ control: form.control });
 
@@ -386,6 +475,27 @@ export function DelegateForm() {
     setStepIndex(stepLabels.length - 1);
     await queryClient.invalidateQueries({ queryKey: ['delegates'] });
   });
+
+  const handlePaymentHandoff = () => {
+    // Do not wait for the autosave debounce: persist the exact values being
+    // handed off before changing routes, then also provide an in-memory prefill.
+    const applicationDraft = form.getValues();
+    saveDraft(uid, applicationDraft);
+    setSavedAt(window.localStorage.getItem(`${draftStorageKey(uid)}:savedAt`));
+
+    navigate('/payments', {
+      state: {
+        paymentPrefill: {
+          applicantName: applicationDraft.personal.fullName,
+          email: applicationDraft.personal.email || user?.email || '',
+          committeeId: applicationDraft.committeePreference.preferredCommitteeId,
+          billingName: applicationDraft.payment.billingName || applicationDraft.personal.fullName,
+          paymentMethod: applicationDraft.payment.paymentMethod,
+          couponCode: applicationDraft.payment.couponCode ?? '',
+        },
+      },
+    });
+  };
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 pb-8">
@@ -571,7 +681,7 @@ export function DelegateForm() {
                                 <Label htmlFor="academic.yearOfStudy">Year of Study</Label>
                                 <SelectField
                                   id="academic.yearOfStudy"
-                                  label="Year of Study"
+                                  label=""
                                   error={form.formState.errors.academic?.yearOfStudy?.message}
                                   {...form.register('academic.yearOfStudy')}
                                 >
@@ -609,7 +719,7 @@ export function DelegateForm() {
                                 </Label>
                                 <SelectField
                                   id="experience.yearsOfExperience"
-                                  label="Experience Level"
+                                  label=""
                                   error={
                                     form.formState.errors.experience?.yearsOfExperience?.message
                                   }
@@ -653,7 +763,7 @@ export function DelegateForm() {
                                 </Label>
                                 <SelectField
                                   id="committeePreference.preferredCommitteeId"
-                                  label="First Choice Committee"
+                                  label=""
                                   error={
                                     form.formState.errors.committeePreference?.preferredCommitteeId
                                       ?.message
@@ -690,7 +800,7 @@ export function DelegateForm() {
                                 </Label>
                                 <SelectField
                                   id="committeePreference.secondChoiceCommitteeId"
-                                  label="Second Choice Committee"
+                                  label=""
                                   error={
                                     form.formState.errors.committeePreference
                                       ?.secondChoiceCommitteeId?.message
@@ -932,8 +1042,8 @@ export function DelegateForm() {
                                 </p>
                               </div>
                               <div className="sm:col-span-2 flex flex-col gap-3 sm:flex-row">
-                                <Button asChild className="w-full sm:w-auto">
-                                  <Link to="/payments">Go to Payment Experience</Link>
+                                <Button type="button" className="w-full sm:w-auto" onClick={handlePaymentHandoff}>
+                                  Go to Payment Experience
                                 </Button>
                                 <Button
                                   type="button"
