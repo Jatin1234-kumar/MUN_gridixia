@@ -40,7 +40,7 @@ const ticketSchema = new Schema<Ticket>(
       maxlength: 64,
     },
     qrToken: { type: String, required: true, trim: true, minlength: 32, maxlength: 64 },
-    qrCode: { type: String, required: true, trim: true, minlength: 8, maxlength: 512 },
+    qrCode: { type: String, required: true, trim: true, minlength: 8, maxlength: 8192 },
     status: { type: String, enum: ticketStatuses, default: 'issued', required: true },
     issuedAt: { type: Date, default: Date.now },
     validFrom: { type: Date, default: null },
@@ -68,14 +68,6 @@ ticketSchema.index(
   {
     unique: true,
     name: 'uniq_ticket_qr_token_active',
-    partialFilterExpression: { deletedAt: null },
-  },
-);
-ticketSchema.index(
-  { qrCode: 1 },
-  {
-    unique: true,
-    name: 'uniq_ticket_qr_code_active',
     partialFilterExpression: { deletedAt: null },
   },
 );
