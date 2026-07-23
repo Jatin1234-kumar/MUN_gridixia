@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { forwardRef, useState, useCallback, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -172,10 +172,12 @@ const activityColors: Record<ActivityItem['type'], string> = {
   email: 'text-muted-foreground bg-white/[0.04] border-white/[0.06]',
 };
 
-function ActivityFeedItem({ item, index }: { item: ActivityItem; index: number }) {
+const ActivityFeedItem = forwardRef<HTMLDivElement, { item: ActivityItem; index: number }>(
+  function ActivityFeedItem({ item, index }, ref) {
   const Icon = activityIcons[item.type];
   return (
     <motion.div
+      ref={ref}
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ duration: 0.25, delay: index * 0.04 }}
@@ -198,7 +200,8 @@ function ActivityFeedItem({ item, index }: { item: ActivityItem; index: number }
       </div>
     </motion.div>
   );
-}
+  },
+);
 
 // ─── Chart Card Wrapper ─────────────────────────────────────────────────────
 

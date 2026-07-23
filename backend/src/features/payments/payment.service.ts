@@ -297,7 +297,13 @@ export const paymentService = {
       applicationDraft:
         (payment?.metadata?.applicationDraft as Record<string, unknown> | undefined) ?? null,
       paymentVerified: registration.paymentStatus === 'paid',
-      checkedIn: attendance?.status === 'present',
+      // New check-ins write an Attendance record. The registration fallback
+      // keeps certificate access correct for passes scanned before that write
+      // was added to the scanner flow.
+      checkedIn:
+        attendance?.status === 'present' ||
+        registration.status === 'checked_in' ||
+        registration.checkedInAt != null,
       registrationStatus: registration.status,
     };
   },
@@ -552,6 +558,9 @@ async function capturePayment(
 async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promise<void> {
   const qrToken = randomBytes(24).toString('hex');
   const ticketNumber = generateTicketNumber();
+  // `qrCode` is covered by a unique index in existing deployments. Do not use
+  // one shared placeholder, or a second paid registration will fail with E11000.
+  const pendingQrCode = `pending-qr-generation:${qrToken}`;
 
   // $set repairs stuck tickets that were previously written with placeholder values
   // (e.g. ticketNumber: 'DP-PENDING') by an older code path.
@@ -571,7 +580,7 @@ async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promis
         eventId: payment.eventId,
         ticketNumber,
         qrToken,
-        qrCode: 'pending-qr-generation',
+        qrCode: pendingQrCode,
         status: 'issued',
         issuedAt: new Date(),
         isDeleted: false,
@@ -589,7 +598,10 @@ async function ensureTicketForPaidRegistration(payment: PaymentDocument): Promis
   // Dispatch QR job when:
   //  (a) a new ticket was just inserted (qrCode is the placeholder), or
   //  (b) an existing ticket is still stuck with the placeholder (never got a job).
-  if (result.qrCode === 'pending-qr-generation') {
+  if (
+    result.qrCode === 'pending-qr-generation' ||
+    result.qrCode.startsWith('pending-qr-generation:')
+  ) {
     // Repair stuck tickets: write a real ticketNumber/qrToken if still placeholder.
     if (result.ticketNumber === 'DP-PENDING') {
       await TicketModel.updateOne({ _id: result._id }, { $set: { ticketNumber, qrToken } }).exec();

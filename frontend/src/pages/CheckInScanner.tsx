@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { motion } from 'framer-motion';
+import { BrowserQRCodeReader, type IScannerControls } from '@zxing/browser';
 import {
   AlertTriangle,
   Camera,
@@ -13,16 +14,13 @@ import {
   Wallet,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/PageHeader';
-import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
-import { readJson, writeJson } from '@/lib/storage';
+import api, { getApiErrorMessage } from '@/lib/api';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-
-const checkInLedgerKey = 'mun-gridixia:checkin-ledger:v1';
 
 type CheckInRecord = {
   ticketNumber: string;
@@ -33,18 +31,20 @@ type CheckInRecord = {
   rawValue: string;
 };
 
-/**
- * QR payload format written by DelegatePass:
- *   "<ticket>|<committee>|<country>|<delegateName>"
- * e.g. "DP-A1B2C3D4|UNSC|India|Jane Smith"
- */
 type ParsedQR = {
   ticket: string;
   committee: string;
   country: string;
   delegateName: string;
-  /** true when the QR contains a DP- ticket and all four pipe-separated fields */
-  isValidPassFormat: boolean;
+};
+
+type CheckInResponse = {
+  status: 'checked_in' | 'already_checked_in';
+  ticketNumber: string;
+  checkedInAt: string;
+  delegateName: string;
+  committee: string;
+  country: string;
 };
 
 type ScannerStatus = 'loading' | 'ready' | 'success' | 'error' | 'already-checked-in' | 'unpaid';
@@ -71,27 +71,6 @@ function formatTimestamp(value: string) {
     minute: '2-digit',
     second: '2-digit',
   }).format(new Date(value));
-}
-
-function loadLedger(): Record<string, CheckInRecord> {
-  return readJson<Record<string, CheckInRecord>>(checkInLedgerKey) ?? {};
-}
-
-function saveLedger(ledger: Record<string, CheckInRecord>) {
-  writeJson(checkInLedgerKey, ledger);
-}
-
-/**
- * Parse the pipe-delimited QR payload produced by DelegatePass.
- * Returns isValidPassFormat=false for any QR that doesn't match the schema.
- */
-function parseQRPayload(raw: string): ParsedQR {
-  const parts = raw.split('|');
-  if (parts.length === 4 && parts[0].startsWith('DP-')) {
-    const [ticket, committee, country, delegateName] = parts;
-    return { ticket, committee, country, delegateName, isValidPassFormat: true };
-  }
-  return { ticket: raw, committee: '', country: '', delegateName: '', isValidPassFormat: false };
 }
 
 function generateSuccessTone() {
@@ -121,7 +100,15 @@ function generateSuccessTone() {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function CameraFrame({ status, message }: { status: ScannerStatus; message: string }) {
+function CameraFrame({
+  status,
+  message,
+  videoRef,
+}: {
+  status: ScannerStatus;
+  message: string;
+  videoRef: RefObject<HTMLVideoElement | null>;
+}) {
   const isSuccess = status === 'success';
   const isError = status === 'error' || status === 'unpaid';
 
@@ -171,7 +158,7 @@ function CameraFrame({ status, message }: { status: ScannerStatus; message: stri
             )}
           >
             <video
-              id="checkin-video"
+              ref={videoRef}
               className="h-full w-full object-cover"
               autoPlay
               muted
@@ -244,6 +231,7 @@ function DetailsCard({
 export default function CheckInScanner() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const detectorRef = useRef<BarcodeDetectorInstance | null>(null);
+  const fallbackControlsRef = useRef<IScannerControls | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const scanTimerRef = useRef<number | null>(null);
   const scanLockRef = useRef(false);
@@ -256,19 +244,54 @@ export default function CheckInScanner() {
   // Snapshot shown in the "Last Scanned" card — null until first scan
   const [snapshot, setSnapshot] = useState<ParsedQR | null>(null);
 
+  const processRawValue = useCallback(async (rawValue: string) => {
+    if (scanLockRef.current) return;
+    scanLockRef.current = true;
+
+    try {
+      const { data } = await api.post<{ data: CheckInResponse }>('/delegates/check-in', { qrToken: rawValue });
+      const scan = data.data;
+      const nextRecord: CheckInRecord = { ...scan, rawValue };
+      setSnapshot({
+        ticket: scan.ticketNumber,
+        committee: scan.committee,
+        country: scan.country,
+        delegateName: scan.delegateName,
+      });
+      setRecord(nextRecord);
+      setScannerStatus(scan.status === 'checked_in' ? 'success' : 'already-checked-in');
+      setMessage(
+        scan.status === 'checked_in'
+          ? 'Delegate successfully checked in.'
+          : 'This delegate has already been checked in.',
+      );
+      if (scan.status === 'checked_in') generateSuccessTone();
+    } catch (err) {
+      setScannerStatus('error');
+      setErrorMessage(getApiErrorMessage(err, 'Unable to verify this delegate pass.'));
+      setMessage('Scan rejected. Present a valid paid delegate pass.');
+      window.setTimeout(() => {
+        scanLockRef.current = false;
+        setScannerStatus('ready');
+        setErrorMessage('');
+        setMessage('Camera active. Hold a delegate QR inside the frame.');
+      }, 1800);
+    }
+  }, []);
+
   // ── Camera bootstrap ───────────────────────────────────────────────────────
 
   const startCamera = useCallback(async () => {
     // Stop any existing stream before restarting
     if (scanTimerRef.current) window.clearInterval(scanTimerRef.current);
+    fallbackControlsRef.current?.stop();
+    fallbackControlsRef.current = null;
     streamRef.current?.getTracks().forEach((t) => t.stop());
     scanLockRef.current = false;
 
     setScannerStatus('loading');
     setMessage('Starting camera…');
     setErrorMessage('');
-
-    videoRef.current = document.getElementById('checkin-video') as HTMLVideoElement | null;
 
     let stream: MediaStream;
     try {
@@ -289,16 +312,56 @@ export default function CheckInScanner() {
 
     streamRef.current = stream;
 
-    if (videoRef.current) {
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
+    const video = videoRef.current;
+    if (!video) {
+      stream.getTracks().forEach((track) => track.stop());
+      setScannerStatus('error');
+      setErrorMessage('Camera preview could not be initialized. Restart the scanner and try again.');
+      return;
+    }
+
+    video.srcObject = stream;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timeout = window.setTimeout(() => reject(new Error('Camera stream timed out')), 8_000);
+        video.onloadedmetadata = () => {
+          window.clearTimeout(timeout);
+          resolve();
+        };
+        video.onerror = () => {
+          window.clearTimeout(timeout);
+          reject(new Error('Camera preview failed'));
+        };
+      });
+      await video.play();
+    } catch {
+      stream.getTracks().forEach((track) => track.stop());
+      setScannerStatus('error');
+      setErrorMessage('The camera stream did not return a usable video preview.');
+      setMessage('Check that another app is not using the selected camera, then restart the scanner.');
+      return;
     }
 
     const Detector = (window as LocalWindow).BarcodeDetector;
     if (!Detector) {
-      setScannerStatus('error');
-      setErrorMessage('This browser does not support live QR decoding.');
-      setMessage('Camera is ready, but QR decoding is unavailable here.');
+      // BarcodeDetector is not available in many desktop Chrome builds. ZXing
+      // decodes the same camera stream as a reliable browser-compatible fallback.
+      try {
+        const reader = new BrowserQRCodeReader();
+        fallbackControlsRef.current = await reader.decodeFromVideoElement(
+          video,
+          (result) => {
+            const rawValue = result?.getText().trim();
+            if (rawValue) void processRawValue(rawValue);
+          },
+        );
+        setScannerStatus('ready');
+        setMessage('Camera active. Hold a delegate QR inside the frame.');
+      } catch {
+        setScannerStatus('error');
+        setErrorMessage('Unable to start QR decoding. Restart the scanner and try again.');
+        setMessage('Camera is ready, but QR decoding could not start.');
+      }
       return;
     }
 
@@ -323,56 +386,9 @@ export default function CheckInScanner() {
 
       if (!rawValue) return;
 
-      const parsed = parseQRPayload(rawValue);
-
-      // Reject QRs that don't match the delegate pass format
-      if (!parsed.isValidPassFormat) {
-        scanLockRef.current = true;
-        setScannerStatus('error');
-        setErrorMessage('QR code is not a valid MUN Gridixia delegate pass.');
-        setMessage('Scan rejected. Present a valid delegate pass QR.');
-        window.setTimeout(() => {
-          scanLockRef.current = false;
-          setScannerStatus('ready');
-          setErrorMessage('');
-          setMessage('Camera active. Hold a delegate QR inside the frame.');
-        }, 1600);
-        return;
-      }
-
-      setSnapshot(parsed);
-
-      // Check ledger for duplicate
-      const ledger = loadLedger();
-      const existing = ledger[parsed.ticket];
-      if (existing) {
-        scanLockRef.current = true;
-        setRecord(existing);
-        setScannerStatus('already-checked-in');
-        setMessage('This delegate has already been checked in.');
-        return;
-      }
-
-      // Record the check-in
-      const checkedInAt = new Date().toISOString();
-      const nextRecord: CheckInRecord = {
-        ticketNumber: parsed.ticket,
-        checkedInAt,
-        delegateName: parsed.delegateName,
-        committee: parsed.committee,
-        country: parsed.country,
-        rawValue,
-      };
-
-      ledger[parsed.ticket] = nextRecord;
-      saveLedger(ledger);
-      setRecord(nextRecord);
-      setScannerStatus('success');
-      setMessage('Delegate successfully checked in.');
-      generateSuccessTone();
-      scanLockRef.current = true;
+      void processRawValue(rawValue);
     }, 650);
-  }, []);
+  }, [processRawValue]);
 
   // Start camera on mount
   useEffect(() => {
@@ -383,6 +399,7 @@ export default function CheckInScanner() {
     return () => {
       window.clearTimeout(t);
       if (scanTimerRef.current) window.clearInterval(scanTimerRef.current);
+      fallbackControlsRef.current?.stop();
       streamRef.current?.getTracks().forEach((t) => t.stop());
     };
   }, [startCamera]);
@@ -429,23 +446,7 @@ export default function CheckInScanner() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25 }}
         >
-          {scannerStatus === 'loading' ? (
-            <Card className="glass-card border-white/[0.08]">
-              <CardContent className="flex min-h-[520px] items-center justify-center p-6">
-                <div className="flex flex-col items-center gap-4 text-center">
-                  <LoadingSpinner size="lg" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">Starting camera</p>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Requesting permission and preparing QR detection.
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ) : (
-            <CameraFrame status={scannerStatus} message={message} />
-          )}
+          <CameraFrame status={scannerStatus} message={message} videoRef={videoRef} />
         </motion.div>
 
         <div className="space-y-4">
