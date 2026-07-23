@@ -55,19 +55,25 @@ const initialState: AuthState = {
   isAuthenticated: false,
 };
 
+// Default Access Token Lifespan: 15 minutes (15 * 60 * 1000 ms)
+const DEFAULT_TOKEN_LIFESPAN = 15 * 60 * 1000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialState);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const scheduleRefresh = useCallback((expiresInMs: number) => {
+  const scheduleRefresh = useCallback((expiresInMs: number = DEFAULT_TOKEN_LIFESPAN) => {
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    const refreshAt = Math.max(expiresInMs - 60_000, 10_000);
+
+    // Refresh 1 minute before token expiry, or at least in 30 seconds
+    const refreshAt = Math.max(expiresInMs - 60_000, 30_000);
+
     refreshTimerRef.current = setTimeout(async () => {
       try {
         const { data } = await api.post<{ accessToken: string }>('/auth/refresh');
         dispatch({ type: 'TOKEN_REFRESHED', payload: { accessToken: data.accessToken } });
         setAccessToken(data.accessToken);
-        scheduleRefresh(15 * 60 * 1000);
+        scheduleRefresh(DEFAULT_TOKEN_LIFESPAN);
       } catch {
         dispatch({ type: 'AUTH_FAILURE' });
       }
@@ -83,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         dispatch({ type: 'AUTH_SUCCESS', payload: { user: data.user, accessToken: data.accessToken } });
         setAccessToken(data.accessToken);
-        scheduleRefresh(15 * 60 * 1000);
+        scheduleRefresh(DEFAULT_TOKEN_LIFESPAN);
       } catch {
         if (!cancelled) dispatch({ type: 'AUTH_FAILURE' });
       }
@@ -102,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data } = await api.post<{ accessToken: string; user: AuthUser }>('/auth/login', { email, password });
       dispatch({ type: 'AUTH_SUCCESS', payload: { user: data.user, accessToken: data.accessToken } });
       setAccessToken(data.accessToken);
-      scheduleRefresh(15 * 60 * 1000);
+      scheduleRefresh(DEFAULT_TOKEN_LIFESPAN);
     } catch (err) {
       dispatch({ type: 'AUTH_FAILURE' });
       throw err;
@@ -115,16 +121,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data } = await api.post<{ accessToken: string; user: AuthUser }>('/auth/register', regData);
       dispatch({ type: 'AUTH_SUCCESS', payload: { user: data.user, accessToken: data.accessToken } });
       setAccessToken(data.accessToken);
-      scheduleRefresh(15 * 60 * 1000);
+      scheduleRefresh(DEFAULT_TOKEN_LIFESPAN);
     } catch (err: any) {
       dispatch({ type: 'AUTH_FAILURE' });
       
-      // ADD THIS LOG TO SEE THE EXACT 75-BYTE VALIDATION ERROR
       if (err.response && err.response.status === 422) {
         console.error("❌ Backend Validation Error:", err.response.data);
       }
       
-      throw err; // Re-throw so your UI component can catch it and display an error message
+      throw err;
     }
   }, [scheduleRefresh]);
 

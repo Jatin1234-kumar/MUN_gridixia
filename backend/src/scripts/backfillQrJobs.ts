@@ -23,7 +23,8 @@ async function main() {
   const pending = await TicketModel.find(
     {
       $or: [
-        { qrCode: 'pending-qr-generation' },
+        // Include the legacy shared placeholder and the current unique form.
+        { qrCode: { $regex: '^pending-qr-generation(?::|$)' } },
         { ticketNumber: 'DP-PENDING' },
       ],
       isDeleted: false,

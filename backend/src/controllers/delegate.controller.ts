@@ -7,9 +7,17 @@ import { RegistrationModel } from '../models/Registration';
 import { TicketModel } from '../models/Ticket';
 import { CommitteeModel } from '../models/Committee';
 import { PaymentModel } from '../models/Payment';
+import { dispatchQrJob } from '../queues';
 import { AppError } from '../utils/AppError';
 import type { AuthenticatedRequest } from '../middleware/authenticate';
 import type { CreateDelegateDto, UpdateDelegateDto } from '../validators/delegate.validator';
+
+const PENDING_QR_PREFIX = 'pending-qr-generation:';
+const LEGACY_PENDING_QR_CODE = 'pending-qr-generation';
+
+function isPendingQrCode(qrCode: string): boolean {
+  return qrCode === LEGACY_PENDING_QR_CODE || qrCode.startsWith(PENDING_QR_PREFIX);
+}
 
 export const delegateController = {
   getMyPass: asyncHandler(async (req, res) => {
@@ -69,7 +77,9 @@ export const delegateController = {
               ticketNumber:
                 `DP-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}`.toUpperCase(),
               qrToken: randomBytes(24).toString('hex'),
-              qrCode: 'pending-qr-generation',
+              // Keep the placeholder unique because production databases may
+              // have a unique index on qrCode.
+              qrCode: `${PENDING_QR_PREFIX}${randomBytes(24).toString('hex')}`,
               status: 'issued',
               issuedAt: new Date(),
               isDeleted: false,
@@ -105,11 +115,24 @@ export const delegateController = {
       }
     }
 
+    // This endpoint can repair a paid registration from before ticket creation
+    // was wired into payment capture. Queue its QR work too; otherwise the pass
+    // remains in "being prepared" forever. The fixed job id makes polling safe.
+    if (ticket && isPendingQrCode(ticket.qrCode) && ticket.ticketNumber && ticket.qrToken) {
+      await dispatchQrJob({
+        ticketId: String(ticket._id),
+        ticketNumber: ticket.ticketNumber,
+        qrToken: ticket.qrToken,
+        userId: String(userId),
+        eventId: String(registration.eventId),
+      });
+    }
+
     const isPaid = registration.paymentStatus === 'paid';
     // Only expose the QR code after backend-verified payment.
     // The raw qrToken never leaves the server.
     const qrCode =
-      isPaid && ticket?.qrCode && ticket.qrCode !== 'pending-qr-generation' ? ticket.qrCode : null;
+      isPaid && ticket?.qrCode && !isPendingQrCode(ticket.qrCode) ? ticket.qrCode : null;
 
     // Must never be served from a browser/proxy cache.
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
