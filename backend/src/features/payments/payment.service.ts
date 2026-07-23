@@ -297,7 +297,13 @@ export const paymentService = {
       applicationDraft:
         (payment?.metadata?.applicationDraft as Record<string, unknown> | undefined) ?? null,
       paymentVerified: registration.paymentStatus === 'paid',
-      checkedIn: attendance?.status === 'present',
+      // New check-ins write an Attendance record. The registration fallback
+      // keeps certificate access correct for passes scanned before that write
+      // was added to the scanner flow.
+      checkedIn:
+        attendance?.status === 'present' ||
+        registration.status === 'checked_in' ||
+        registration.checkedInAt != null,
       registrationStatus: registration.status,
     };
   },

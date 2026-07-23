@@ -7,6 +7,8 @@ import { RegistrationModel } from '../models/Registration';
 import { TicketModel } from '../models/Ticket';
 import { CommitteeModel } from '../models/Committee';
 import { PaymentModel } from '../models/Payment';
+import { UserModel } from '../models/User';
+import { AttendanceModel } from '../models/Attendance';
 import { dispatchQrJob } from '../queues';
 import { AppError } from '../utils/AppError';
 import type { AuthenticatedRequest } from '../middleware/authenticate';
@@ -20,6 +22,87 @@ function isPendingQrCode(qrCode: string): boolean {
 }
 
 export const delegateController = {
+  checkIn: asyncHandler(async (req, res) => {
+    const body = req.body as { qrToken?: unknown };
+    const qrToken = typeof body.qrToken === 'string' ? body.qrToken.trim() : '';
+    if (!/^[a-f0-9]{48}$/i.test(qrToken)) {
+      throw new AppError(400, 'Invalid delegate pass QR code');
+    }
+
+    const ticket = await TicketModel.findOne({ qrToken, deletedAt: null }).lean().exec();
+    if (!ticket) throw new AppError(404, 'Delegate pass was not found');
+
+    const [registration, delegate, payment] = await Promise.all([
+      RegistrationModel.findById(ticket.registrationId).lean().exec(),
+      UserModel.findById(ticket.userId, { firstName: 1, lastName: 1 }).lean().exec(),
+      PaymentModel.findOne({ registrationId: ticket.registrationId }, { metadata: 1 })
+        .sort({ createdAt: -1 })
+        .lean()
+        .exec(),
+    ]);
+    if (!registration || registration.paymentStatus !== 'paid') {
+      throw new AppError(409, 'This delegate pass has not completed payment');
+    }
+
+    const checkedInAt = new Date();
+    const checkedInTicket = await TicketModel.findOneAndUpdate(
+      { _id: ticket._id, checkedInAt: null, status: { $in: ['issued', 'active'] } },
+      { $set: { status: 'used', checkedInAt } },
+      { new: true },
+    )
+      .lean()
+      .exec();
+
+    if (!checkedInTicket && !ticket.checkedInAt && ticket.status !== 'used') {
+      throw new AppError(409, 'This delegate pass is not valid for check-in');
+    }
+
+    const alreadyCheckedIn = !checkedInTicket;
+    const effectiveTicket = checkedInTicket ?? ticket;
+    if (!alreadyCheckedIn) {
+      await Promise.all([
+        RegistrationModel.updateOne(
+          { _id: registration._id, status: 'confirmed' },
+          { $set: { status: 'checked_in', checkedInAt } },
+        ).exec(),
+        AttendanceModel.findOneAndUpdate(
+          { registrationId: registration._id, deletedAt: null },
+          {
+            $set: {
+              status: 'present',
+              markedAt: checkedInAt,
+              markedBy: new Types.ObjectId((req as AuthenticatedRequest).user.sub),
+              isDeleted: false,
+              deletedAt: null,
+            },
+            $setOnInsert: {
+              registrationId: registration._id,
+              userId: registration.userId,
+              eventId: registration.eventId,
+              committeeId: registration.committeeId ?? null,
+            },
+          },
+          { upsert: true, new: true },
+        ).exec(),
+      ]);
+    }
+
+    const committee = registration.committeeId
+      ? await CommitteeModel.findById(registration.committeeId, { name: 1, abbr: 1 }).lean().exec()
+      : null;
+
+    res.json({
+      data: {
+        status: alreadyCheckedIn ? 'already_checked_in' : 'checked_in',
+        ticketNumber: effectiveTicket.ticketNumber,
+        checkedInAt: (effectiveTicket.checkedInAt ?? checkedInAt).toISOString(),
+        delegateName: [delegate?.firstName, delegate?.lastName].filter(Boolean).join(' ') || 'Delegate',
+        committee: committee?.name ?? 'Unassigned',
+        country: getPersistedCountry(payment?.metadata) ?? 'Not assigned',
+      },
+    });
+  }),
+
   getMyPass: asyncHandler(async (req, res) => {
     const rawSub = (req as AuthenticatedRequest).user?.sub;
     if (!rawSub || !Types.ObjectId.isValid(rawSub)) {

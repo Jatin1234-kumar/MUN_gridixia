@@ -11,6 +11,7 @@ import {
 const router = Router();
 
 router.get('/pass', authenticate, delegateController.getMyPass);
+router.post('/check-in', authenticate, authorize(['organizer']), delegateController.checkIn);
 router.get('/', delegateController.getAll);
 router.get('/:id', validate(getDelegateSchema), delegateController.getById);
 router.post(
